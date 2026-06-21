@@ -38,3 +38,13 @@ add_data = [
 pyi_options = ""
 # Or already-tokenised extras:
 extra_args = []
+
+# --- runtime protection (PyArmor-style), applies to obfuscate & pyinstaller ---
+[protection]
+expire = "2027-12-31"          # refuse to run after this date (omit for none)
+anti_debug = true              # abort if a debugger/tracer is detected
+require_license = false        # require a signed license file at runtime
+license_name = "tungtungarmor.lic"
+bind_machine = false           # bind to the BUILD machine's id
+machines = []                  # or list specific allowed machine ids here
+

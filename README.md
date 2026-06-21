@@ -28,6 +28,8 @@ your .py  ──►  AST transforms  ──►  compile to bytecode  ──►  
   tree, preserving layout and copying data files.
 - 🏗️ **PyInstaller integration** — obfuscate *and* build a standalone executable
   in one command. The runtime is bundled automatically.
+- 🛡️ **Runtime protection** — expiry dates, machine binding, anti-debug checks
+  and signed external **license files** you can re-issue without rebuilding.
 - 🐍 **Pure Python, zero runtime dependencies** — the generated runtime only uses
   the standard library, so protected programs run anywhere.
 
@@ -163,15 +165,70 @@ tungtungarmor pyinstaller --config build/prod.toml --name "Prod Build"
 | `--config FILE` | Load options from a TOML/JSON config file |
 | `--show-key` | (`obfuscate`) print the generated key |
 
+## Runtime protection (PyArmor-style)
+
+Add license-style guards that run *before* your code does. They work with both
+`obfuscate` and `pyinstaller`, and can also be set in the config `[protection]`
+section.
+
+| Flag | Effect |
+|------|--------|
+| `--expire YYYY-MM-DD` | Refuse to run after this date |
+| `--anti-debug` | Abort if a debugger/tracer is detected (`sys.gettrace`, `pydevd`, `pdb`) |
+| `--bind-machine` | Bind to the **build** machine's id |
+| `--allow-machine ID` | Allow a specific machine id (repeatable) |
+| `--require-license` | Require a valid signed license file at runtime |
+| `--license-name NAME` | License filename to look for (default `tungtungarmor.lic`) |
+
+```bash
+# Expire + machine lock baked into the build:
+tungtungarmor obfuscate app.py -o dist_protected \
+    --expire 2026-12-31 --anti-debug --allow-machine <id>
+```
+
+### Machine ids
+
+On the *target* machine, get its id:
+
+```bash
+tungtungarmor machine-id        # -> 7f5d3e16f5cf0e296c3185a759bd8f02
+```
+
+Then bind the build to it with `--allow-machine <id>` (repeat for several
+machines). The id is derived from OS + hostname + MAC address.
+
+### Floating licenses (issue without rebuilding)
+
+With `--require-license`, the program loads a **signed license file** at startup
+instead of having limits baked in — so you can issue new licenses (extend
+expiry, add machines) **without rebuilding**:
+
+```bash
+# 1) build once, requiring a license
+tungtungarmor pyinstaller app.py --name myapp --require-license
+
+# 2) issue a license signed with that build's key (read from the runtime)
+tungtungarmor license --runtime build/tungtungarmor_obf/tungtungarmor_runtime \
+    --expire 2026-12-31 --bind-machine -o tungtungarmor.lic
+```
+
+At runtime the license is looked up via the `TTA_LICENSE` env var, then next to
+the executable, then the current directory. Licenses are HMAC-SHA256 signed with
+the per-build key, so they can't be forged or edited without it.
+
 ## Python API
 
 ```python
-from tungtungarmor import pack, ObfuscateOptions
+from tungtungarmor import pack, ObfuscateOptions, ProtectionOptions, parse_expire
 
 pack(
     "myproject",
     "dist_protected",
     ObfuscateOptions(encrypt_strings=True, rename_locals=True, optimize=2),
+    protection=ProtectionOptions(
+        expire=parse_expire("2026-12-31"),
+        anti_debug=True,
+    ),
 )
 ```
 
@@ -194,6 +251,12 @@ pack(
   the decryption key ultimately ships inside the program. A determined,
   skilled attacker with the runtime can recover the bytecode. The goal is to
   **raise the bar substantially**, not to provide unbreakable DRM.
+- The runtime guards (anti-debug, expiry, machine/license checks) are strong
+  **deterrents**, not unbreakable DRM: since the key ships with the program, a
+  skilled attacker can patch them out. They stop casual sharing and enforce
+  honest licensing, not a motivated cracker.
+- Machine ids are derived from OS + hostname + MAC; they can change (new NIC,
+  VM cloning) — keep a way to re-issue licenses.
 - Marshalled bytecode is tied to the Python **minor version** used to obfuscate.
   Build with the same Python version you ship/run with.
 - `--rename-locals` is conservative but experimental; test your app after

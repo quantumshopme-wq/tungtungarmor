@@ -10,6 +10,14 @@ from pathlib import Path
 from . import __version__
 from .config import assemble_pyi_flags, find_default_config, load_config
 from .packer import DEFAULT_RUNTIME_PKG, ObfuscateOptions, pack
+from .protection import (
+    DEFAULT_LICENSE_NAME,
+    ProtectionOptions,
+    machine_id,
+    parse_expire,
+    read_key_from_runtime,
+    sign_license,
+)
 
 # Sentinel default: optional args are absent from the namespace unless the user
 # actually passed them, so we can layer  defaults < config < explicit CLI.
@@ -50,6 +58,53 @@ def _build_options(args, cfg) -> ObfuscateOptions:
     )
 
 
+def _parse_expire_value(value):
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip()
+    if not s:
+        return None
+    return parse_expire(s)
+
+
+def _build_protection(args, cfg) -> ProtectionOptions:
+    sec = cfg.get("protection", {})
+    expire = _parse_expire_value(_resolve(args, "expire", sec, "expire", None))
+
+    machines = list(sec.get("machines", []) or [])
+    if getattr(args, "allow_machine", None):
+        machines.extend(args.allow_machine)
+    if _resolve(args, "bind_machine", sec, "bind_machine", False):
+        machines.append(machine_id())
+    machines = sorted(set(machines)) or None
+
+    return ProtectionOptions(
+        expire=expire,
+        machines=machines,
+        anti_debug=_resolve(args, "anti_debug", sec, "anti_debug", False),
+        require_license=_resolve(args, "require_license", sec, "require_license", False),
+        license_name=_resolve(args, "license_name", sec, "license_name", DEFAULT_LICENSE_NAME),
+    )
+
+
+def _report_protection(p: ProtectionOptions) -> None:
+    if not p.active:
+        return
+    bits = []
+    if p.anti_debug:
+        bits.append("anti-debug")
+    if p.expire:
+        from datetime import datetime
+        bits.append("expires " + datetime.fromtimestamp(p.expire).strftime("%Y-%m-%d"))
+    if p.machines:
+        bits.append(f"{len(p.machines)} machine(s)")
+    if p.require_license:
+        bits.append(f"requires license '{p.license_name}'")
+    print("  protection: " + ", ".join(bits))
+
+
 def _cmd_obfuscate(args) -> int:
     cfg = _load_cfg(args)
     target = getattr(args, "target", None) or cfg.get("target") or cfg.get("source")
@@ -63,10 +118,12 @@ def _cmd_obfuscate(args) -> int:
         return 2
     output = _resolve(args, "output", cfg, "output", "dist_protected")
     options = _build_options(args, cfg)
-    result = pack(target, Path(output), options)
+    protection = _build_protection(args, cfg)
+    result = pack(target, Path(output), options, protection=protection)
     print(f"tungtungarmor: protected {len(result.obfuscated_files)} file(s)")
     print(f"  output:  {result.output_dir}")
     print(f"  runtime: {result.runtime_dir}")
+    _report_protection(protection)
     if getattr(args, "show_key", False):
         import base64
         print(f"  key(b85): {base64.b85encode(result.key).decode()}")
@@ -90,6 +147,7 @@ def _cmd_pyinstaller(args) -> int:
         return 2
 
     options = _build_options(args, cfg)
+    protection = _build_protection(args, cfg)
     name = _resolve(args, "name", pyi, "name", None)
     onedir = _resolve(args, "onedir", pyi, "onedir", False)
     windowed = _resolve(args, "windowed", pyi, "windowed", False)
@@ -127,6 +185,7 @@ def _cmd_pyinstaller(args) -> int:
             onefile=not onedir,
             console=not windowed,
             options=options,
+            protection=protection,
             extra_args=extra or None,
             **build_kwargs,
         )
@@ -135,7 +194,43 @@ def _cmd_pyinstaller(args) -> int:
         return 1
     if rc == 0:
         print("tungtungarmor: build finished -> see dist/")
+        _report_protection(protection)
     return rc
+
+
+def _cmd_machine_id(args) -> int:
+    print(machine_id())
+    return 0
+
+
+def _cmd_license(args) -> int:
+    import base64
+
+    if getattr(args, "key", None):
+        key = base64.b85decode(args.key)
+    elif getattr(args, "runtime", None):
+        key = read_key_from_runtime(Path(args.runtime))
+    else:
+        print("error: provide --runtime <runtime_dir> or --key <b85>", file=sys.stderr)
+        return 2
+
+    expire = _parse_expire_value(getattr(args, "expire", None))
+    machines = list(getattr(args, "allow_machine", None) or [])
+    if getattr(args, "bind_machine", False):
+        machines.append(machine_id())
+    machines = sorted(set(machines)) or None
+
+    text = sign_license(key, expire=expire, machines=machines,
+                        note=getattr(args, "note", "") or "")
+    out = Path(getattr(args, "output", None) or DEFAULT_LICENSE_NAME)
+    out.write_text(text, encoding="utf-8")
+    print(f"tungtungarmor: wrote license -> {out}")
+    if expire:
+        from datetime import datetime
+        print(f"  expires:  {datetime.fromtimestamp(expire).strftime('%Y-%m-%d')}")
+    if machines:
+        print(f"  machines: {', '.join(machines)}")
+    return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -160,6 +255,20 @@ def build_parser() -> argparse.ArgumentParser:
                        help="compile() optimization level (strips asserts/docstrings)")
         p.add_argument("--runtime-pkg", default=SUPPRESS,
                        help="name of the generated runtime package")
+        # --- runtime protection (PyArmor-style) ---
+        g = p.add_argument_group("protection")
+        g.add_argument("--expire", default=SUPPRESS, metavar="YYYY-MM-DD",
+                       help="refuse to run after this date")
+        g.add_argument("--anti-debug", action="store_true", default=SUPPRESS,
+                       help="abort if a debugger/tracer is detected")
+        g.add_argument("--bind-machine", action="store_true", default=SUPPRESS,
+                       help="bind to THIS machine's id")
+        g.add_argument("--allow-machine", action="append", default=SUPPRESS,
+                       metavar="ID", help="allow a specific machine id (repeatable)")
+        g.add_argument("--require-license", action="store_true", default=SUPPRESS,
+                       help="require a valid signed license file at runtime")
+        g.add_argument("--license-name", default=SUPPRESS,
+                       help=f"license filename to look for (default: {DEFAULT_LICENSE_NAME})")
 
     # obfuscate
     p_obf = sub.add_parser("obfuscate", help="obfuscate a file or directory")
@@ -192,6 +301,24 @@ def build_parser() -> argparse.ArgumentParser:
                        help="pass remaining args straight to PyInstaller")
     add_common(p_pyi)
     p_pyi.set_defaults(func=_cmd_pyinstaller)
+
+    # machine-id
+    p_mid = sub.add_parser("machine-id", help="print this machine's binding id")
+    p_mid.set_defaults(func=_cmd_machine_id)
+
+    # license
+    p_lic = sub.add_parser("license", help="issue a signed license file")
+    src = p_lic.add_mutually_exclusive_group(required=True)
+    src.add_argument("--runtime", help="path to a generated runtime package (reads its key)")
+    src.add_argument("--key", help="build key as a base85 string")
+    p_lic.add_argument("--expire", metavar="YYYY-MM-DD", help="license expiry date")
+    p_lic.add_argument("--bind-machine", action="store_true",
+                       help="bind the license to THIS machine")
+    p_lic.add_argument("--allow-machine", action="append", metavar="ID",
+                       help="allow a specific machine id (repeatable)")
+    p_lic.add_argument("--note", default="", help="free-text note stored in the license")
+    p_lic.add_argument("-o", "--output", help=f"output file (default: {DEFAULT_LICENSE_NAME})")
+    p_lic.set_defaults(func=_cmd_license)
 
     return parser
 

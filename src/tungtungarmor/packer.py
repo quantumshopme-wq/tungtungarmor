@@ -90,10 +90,11 @@ def obfuscate_file(
     return dst
 
 
-def write_runtime(output_dir: Path, key: bytes, options: ObfuscateOptions) -> Path:
+def write_runtime(output_dir: Path, key: bytes, options: ObfuscateOptions,
+                  protection=None) -> Path:
     runtime_dir = output_dir / options.runtime_pkg
     runtime_dir.mkdir(parents=True, exist_ok=True)
-    for name, content in render_runtime(key).items():
+    for name, content in render_runtime(key, protection).items():
         (runtime_dir / name).write_text(content, encoding="utf-8")
     return runtime_dir
 
@@ -122,6 +123,7 @@ def pack(
     output_dir: Path,
     options: Optional[ObfuscateOptions] = None,
     key: Optional[bytes] = None,
+    protection=None,
 ) -> PackResult:
     """Obfuscate a file or directory tree into *output_dir*.
 
@@ -157,5 +159,5 @@ def pack(
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_bytes(src.read_bytes())
 
-    result.runtime_dir = write_runtime(output_dir, key, options)
+    result.runtime_dir = write_runtime(output_dir, key, options, protection)
     return result

@@ -17,6 +17,13 @@ from .packer import (
     pack,
     write_runtime,
 )
+from .protection import (
+    DEFAULT_LICENSE_NAME,
+    ProtectionOptions,
+    machine_id,
+    parse_expire,
+    sign_license,
+)
 
 __version__ = "0.1.0"
 
@@ -32,4 +39,9 @@ __all__ = [
     "encrypt",
     "decrypt",
     "new_key",
+    "ProtectionOptions",
+    "DEFAULT_LICENSE_NAME",
+    "machine_id",
+    "parse_expire",
+    "sign_license",
 ]
