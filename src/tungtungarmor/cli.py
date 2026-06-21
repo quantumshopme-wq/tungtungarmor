@@ -65,6 +65,7 @@ def _cmd_pyinstaller(args) -> int:
             onefile=not args.onedir,
             console=not args.windowed,
             options=options,
+            pyi_options=args.pyi_options,
             extra_args=args.pyinstaller_args or None,
         )
     except RuntimeError as exc:
@@ -113,6 +114,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_pyi.add_argument("--onedir", action="store_true", help="build a one-folder bundle (default: onefile)")
     p_pyi.add_argument("--windowed", action="store_true", help="GUI app, no console window")
     p_pyi.add_argument("--spec-only", action="store_true", help="only write a .spec file, don't build")
+    p_pyi.add_argument("--pyi-options", default=None,
+                       help="single quoted string of PyInstaller flags, PyArmor "
+                            "pyi_options style, e.g. \"-w -i app.ico --add-data assets;assets\"")
     p_pyi.add_argument("--pyinstaller-args", nargs=argparse.REMAINDER,
                        help="pass remaining args straight to PyInstaller")
     add_common(p_pyi)

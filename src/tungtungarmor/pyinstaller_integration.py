@@ -9,12 +9,25 @@ them like any other source -- no C extension or custom bootloader needed.
 
 from __future__ import annotations
 
+import os
+import shlex
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Iterable, List, Optional
 
 from .packer import DEFAULT_RUNTIME_PKG, ObfuscateOptions, pack
+
+
+def _has_flag(tokens: Iterable[str], names: Iterable[str]) -> bool:
+    """True if any flag in *names* (or its ``--flag=value`` form) is present."""
+    names = tuple(names)
+    for tok in tokens:
+        if tok in names:
+            return True
+        if any(tok.startswith(n + "=") for n in names):
+            return True
+    return False
 
 SPEC_TEMPLATE = '''\
 # -*- mode: python ; coding: utf-8 -*-
@@ -92,9 +105,21 @@ def build(
     onefile: bool = True,
     console: bool = True,
     options: Optional[ObfuscateOptions] = None,
+    pyi_options: Optional[str] = None,
     extra_args: Optional[List[str]] = None,
 ) -> int:
     """Obfuscate *entry* (and its project) then build it with PyInstaller.
+
+    Extra PyInstaller flags can be supplied two ways (both forwarded verbatim):
+
+    * *pyi_options* -- a single string, PyArmor-``pyi_options`` style, e.g.
+      ``"-w -i app.ico --name 'My App' --add-data assets;assets"``. It is split
+      with :func:`shlex.split`.
+    * *extra_args*  -- an already-tokenised list of flags.
+
+    Flags you provide there take precedence: tungtungarmor only injects its own
+    ``--name`` / ``--onefile|--onedir`` / ``--console|--windowed`` defaults when
+    you did *not* specify them yourself, so nothing is passed twice.
 
     Returns the PyInstaller process exit code.
     """
@@ -110,6 +135,13 @@ def build(
     name = name or entry.stem
     work_dir = Path(work_dir).resolve()
 
+    # Collect user-supplied PyInstaller flags from both sources.
+    extra: List[str] = []
+    if pyi_options:
+        extra.extend(shlex.split(pyi_options, posix=(os.name != "nt")))
+    if extra_args:
+        extra.extend(extra_args)
+
     # 1. Obfuscate the whole project tree into the work dir.
     result = pack(project_root, work_dir, options)
 
@@ -123,7 +155,6 @@ def build(
     cmd = [
         sys.executable, "-m", "PyInstaller",
         str(obf_entry),
-        "--name", name,
         "--paths", str(work_dir),
         "--hidden-import", options.runtime_pkg,
         "--collect-submodules", options.runtime_pkg,
@@ -132,11 +163,16 @@ def build(
         "--specpath", str(work_dir),
         "--noconfirm",
     ]
-    cmd.append("--onefile" if onefile else "--onedir")
-    cmd.append("--console" if console else "--windowed")
-    if extra_args:
-        cmd.extend(extra_args)
+    # Only inject defaults the user hasn't overridden, to avoid duplicate flags.
+    if not _has_flag(extra, ("--name", "-n")):
+        cmd += ["--name", name]
+    if not _has_flag(extra, ("--onefile", "-F", "--onedir", "-D")):
+        cmd.append("--onefile" if onefile else "--onedir")
+    if not _has_flag(extra, ("--console", "-c", "--nowindowed",
+                             "--windowed", "-w", "--noconsole")):
+        cmd.append("--console" if console else "--windowed")
+    cmd.extend(extra)
 
-    print("tungtungarmor: running", " ".join(cmd))
+    print("tungtungarmor: running", " ".join(shlex.quote(c) for c in cmd))
     proc = subprocess.run(cmd)
     return proc.returncode

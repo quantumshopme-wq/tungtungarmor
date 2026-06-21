@@ -78,7 +78,34 @@ tungtungarmor pyinstaller app.py \
     --pyinstaller-args --add-data assets:assets --icon app.ico
 ```
 
-Anything after `--pyinstaller-args` is forwarded verbatim to PyInstaller.
+### Passing PyInstaller options (PyArmor `pyi_options` style)
+
+If you're migrating from PyArmor's
+`pyarmor cfg pack:pyi_options="..."`, use `--pyi-options` with the **same single
+quoted string** — every flag is forwarded verbatim to PyInstaller:
+
+```bash
+tungtungarmor pyinstaller main.py --onedir \
+  --pyi-options "-w -i assets/icons/app.ico --name \"My App\" \
+    --hidden-import api_server --collect-data pandas \
+    --add-data assets;assets --add-data templates;templates \
+    --copy-metadata numpy --copy-metadata fastapi --noupx"
+```
+
+This covers `--hidden-import`, `--add-data`, `--collect-data`, `--copy-metadata`,
+`-w`/`-i`/`--name`, `--noupx`, etc. — anything PyInstaller accepts.
+
+You can also append flags as a raw token list after `--pyinstaller-args`
+(must come last). Both sources are merged.
+
+**No duplicate flags:** tungtungarmor injects its own `--name`,
+`--onefile`/`--onedir` and `--console`/`--windowed` defaults *only if you didn't
+supply them*. Whatever you pass wins, and the runtime hidden-import is always
+added for you — so you don't need PyArmor's `--hidden-import pyarmor_runtime_xxx`
+line.
+
+> Note: data separators differ per OS — `assets;assets` on Windows,
+> `assets:assets` on Linux/macOS (same as PyInstaller itself).
 
 ### Obfuscation options (both commands)
 
