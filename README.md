@@ -107,6 +107,50 @@ line.
 > Note: data separators differ per OS — `assets;assets` on Windows,
 > `assets:assets` on Linux/macOS (same as PyInstaller itself).
 
+### Config file (recommended for big projects)
+
+Long `--hidden-import` / `--add-data` / `--copy-metadata` lists belong in a
+config file, not on one giant command line. Drop a `tungtungarmor.toml` (or
+`tungtungarmor.json`) in your project — it's auto-detected — then just run:
+
+```bash
+tungtungarmor pyinstaller        # entry, options, everything read from config
+```
+
+```toml
+# tungtungarmor.toml
+output = "dist_protected"
+optimize = 2
+
+[pyinstaller]
+entry = "main.py"
+project_root = "."
+name = "TungTung Poster"
+onedir = true            # false => one-file
+windowed = true          # true  => no console window
+icon = "assets/icons/app.ico"
+noupx = true
+hidden_imports = ["api_server", "adbutils", "fastapi", "uvicorn"]
+collect_data = ["pandas", "uiautomator2"]
+collect_submodules = ["uvicorn"]
+copy_metadata = ["numpy", "fastapi", "uvicorn"]
+add_data = ["assets;assets", "templates;templates"]   # use ':' on Linux/macOS
+pyi_options = ""         # any extra raw flags, PyArmor style
+extra_args = []          # already-tokenised extra flags
+```
+
+A full annotated example is in [`examples/tungtungarmor.toml`](examples/tungtungarmor.toml).
+
+Precedence is **explicit CLI flag > config value > built-in default**, so you
+can keep a config and still override per-run, e.g.:
+
+```bash
+tungtungarmor pyinstaller --config build/prod.toml --name "Prod Build"
+```
+
+> TOML needs Python 3.11+ (or `pip install tomli`). A `.json` config works on
+> any version.
+
 ### Obfuscation options (both commands)
 
 | Flag | Meaning |
@@ -116,6 +160,7 @@ line.
 | `--min-string-length N` | Only encrypt strings of length ≥ N |
 | `--optimize {0,1,2}` | `compile()` level (2 strips asserts + docstrings) |
 | `--runtime-pkg NAME` | Rename the generated runtime package |
+| `--config FILE` | Load options from a TOML/JSON config file |
 | `--show-key` | (`obfuscate`) print the generated key |
 
 ## Python API
