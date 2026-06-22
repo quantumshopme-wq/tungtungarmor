@@ -133,12 +133,20 @@ Benefits:
   never reached.
 - **Auto hidden-imports.** Because the obfuscated source is encrypted,
   PyInstaller can't see any `import` inside it. tungtungarmor therefore feeds
-  PyInstaller every module your source imports — both your own modules **and
-  the third-party ones it finds**, including submodules like `moviepy.editor`
-  that are easy to forget. Standard-library imports are filtered out.
-- You usually only need to list third-party modules that are imported
+  PyInstaller the **exact** modules your source imports — your own modules
+  **and** the specific third-party modules/submodules it finds, e.g.
+  `moviepy.editor` or `selenium.webdriver.support.expected_conditions`.
+  Standard-library imports are filtered out. This is precise (only what the
+  code imports), so it won't drag in a package's broken optional submodules the
+  way a blanket `--collect-submodules` can.
+- You may see PyInstaller log `hidden import "x.y" not found` for a
+  `from pkg import SomeClass` line (it's a class, not a module) — that's
+  harmless.
+- You only need to list, in `hidden_imports`, third-party modules imported
   *dynamically inside the library itself* (e.g. `uvicorn.loops.auto`), since
-  those never appear in your source.
+  those never appear in your source. For libraries that need their whole
+  subtree (data + all submodules), use `collect_all = ["pkg"]` /
+  `collect_submodules = ["pkg"]` in the config.
 - For imports the scanner can't see statically (dynamic `importlib`, plugins),
   force them in with `--include modulename` / `--include "plugins/*.py"` (or
   `include = [...]` in the config).

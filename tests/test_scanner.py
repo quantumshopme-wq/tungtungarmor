@@ -137,3 +137,18 @@ def test_external_thirdparty_imports_collected(tmp_path):
     assert "json" not in scan.external_modules
     assert not any(m.startswith("nothing_local") for m in scan.external_modules)
     assert "helper2" in scan.local_modules
+
+
+def test_selenium_style_submodule_added_as_hidden_import(tmp_path):
+    """from X.Y import Z where Z is a submodule must be recorded so it can be
+    passed to PyInstaller as a precise hidden import."""
+    root = tmp_path / "proj3"
+    root.mkdir()
+    (root / "main.py").write_text(
+        "from selenium.webdriver.support import expected_conditions as EC\n"
+        "import requests\n"
+        "print('ok')\n"
+    )
+    scan = discover(root / "main.py", root)
+    assert "selenium.webdriver.support" in scan.external_modules
+    assert "selenium.webdriver.support.expected_conditions" in scan.external_modules

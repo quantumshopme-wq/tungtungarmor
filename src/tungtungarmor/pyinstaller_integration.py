@@ -158,10 +158,13 @@ def build(
               f"{len(scan.external_modules)} third-party import(s)")
         result = pack(project_root, work_dir, options,
                       protection=protection, only_files=sorted(scan.files))
-        # Because the real imports are hidden inside encrypted blobs, PyInstaller
-        # can't see them -- so feed it every module the source imports as a
-        # hidden import: the project's own modules AND the third-party modules
-        # (incl. submodules like moviepy.editor) found while scanning.
+        # The real imports are hidden inside encrypted blobs, so PyInstaller
+        # can't see them. Feed it every module the source imports as a hidden
+        # import: the project's own modules AND the specific third-party modules
+        # / submodules found while scanning (e.g. moviepy.editor,
+        # selenium.webdriver.support.expected_conditions). This is precise --
+        # only what the code actually imports -- so it won't drag in a package's
+        # broken optional submodules the way a blanket --collect-submodules can.
         entry_module = None
         try:
             entry_module = entry.relative_to(project_root).with_suffix("").as_posix().replace("/", ".")

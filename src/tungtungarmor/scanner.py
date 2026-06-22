@@ -167,9 +167,12 @@ def discover(
                 if base:
                     # relative imports are always local; don't mark external
                     _consider(base, allow_external=not is_relative)
-                # imported names may be submodules -- follow only if local
+                # imported names may themselves be submodules -- follow if local,
+                # and record as external too so e.g.
+                # "from selenium.webdriver.support import expected_conditions"
+                # adds the submodule as a hidden import.
                 for sub in expanded:
-                    _consider(sub, allow_external=False)
+                    _consider(sub, allow_external=not is_relative)
 
     local_modules = {_file_to_module(f, root) for f in files}
     local_modules.discard("")
