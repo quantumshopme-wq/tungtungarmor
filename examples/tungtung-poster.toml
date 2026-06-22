@@ -13,11 +13,11 @@
 output = "dist_protected"
 optimize = 2
 
-# Telusuri import dari entry (main.py) dan HANYA obfuscate modul milik project
-# (seperti PyArmor). File tak terkait (debug_app, scratch, dll) otomatis diabaikan,
-# jadi tidak perlu daftar exclude panjang.
-follow_imports = true
-
+# follow-imports sudah DEFAULT: tungtungarmor menelusuri import dari entry
+# (main.py) dan HANYA mengobfuscate modul milik project (seperti PyArmor),
+# jadi file tak terkait (debug_app, scratch, .venv, dll) otomatis diabaikan.
+# Tidak perlu menulis apa pun. Untuk mematikan: follow_imports = false
+#
 # Untuk import dinamis yang tidak terlihat scanner (importlib/plugin), tambahkan
 # di sini sebagai nama modul atau glob, mis: include = ["plugins/*.py"]
 include = []

@@ -111,16 +111,21 @@ line.
 
 ### Follow imports (obfuscate only your project, like PyArmor)
 
-By default `obfuscate` on a directory processes **every** `.py` in the tree,
-which forces long exclude lists and trips over unrelated/broken scratch files.
-With `--follow-imports` tungtungarmor instead starts at the entry script and
-follows imports, obfuscating **only modules that belong to your project** —
-standard-library and third-party packages are ignored.
+**This is the default.** Whenever an entry script is known (the `pyinstaller`
+command, or `obfuscate` pointed at a file), tungtungarmor starts at the entry
+and follows imports, obfuscating **only modules that belong to your project** —
+standard-library and third-party packages are ignored. No config needed.
 
 ```bash
-tungtungarmor obfuscate main.py --follow-imports -o dist_protected
-# or in the pyinstaller flow / config:  follow_imports = true
+tungtungarmor pyinstaller app.py          # follows imports automatically
+tungtungarmor obfuscate main.py -o out    # ditto
+
+# Opt out and obfuscate the whole tree instead (honours --exclude):
+tungtungarmor obfuscate ./proj --no-follow-imports -o out
 ```
+
+> `obfuscate` on a **directory** still defaults to whole-tree mode (there's no
+> single entry to follow). Point it at the entry file to get import-following.
 
 Benefits:
 
@@ -185,7 +190,8 @@ tungtungarmor pyinstaller --config build/prod.toml --name "Prod Build"
 | `--min-string-length N` | Only encrypt strings of length ≥ N |
 | `--optimize {0,1,2}` | `compile()` level (2 strips asserts + docstrings) |
 | `--runtime-pkg NAME` | Rename the generated runtime package |
-| `--follow-imports` | Obfuscate only modules reachable from the entry (PyArmor-style), not the whole tree |
+| `--follow-imports` | (default w/ an entry) obfuscate only modules reachable from the entry |
+| `--no-follow-imports` | Obfuscate the whole tree instead (honours `--exclude`) |
 | `--include MODULE` | Force-include a module/glob the scanner can't see (dynamic imports) |
 | `--exclude PATTERN` | Extra dir/glob to skip (`.venv`, `build`, `dist`, `.git`, `__pycache__` already skipped) |
 | `--config FILE` | Load options from a TOML/JSON config file |

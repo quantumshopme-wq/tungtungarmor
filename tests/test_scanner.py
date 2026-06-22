@@ -77,6 +77,36 @@ def test_pack_only_files_runs(tmp_path):
     assert "app" in proc.stdout
 
 
+def test_follow_imports_is_default_for_file_target(tmp_path):
+    """obfuscate <entry.py> with no flags must follow imports and ignore the
+    broken/unrelated sibling files."""
+    root = _make_project(tmp_path)
+    out = tmp_path / "out"
+    env = {"PATH": "/usr/bin:/bin", "PYTHONPATH": str(ROOT / "src")}
+    proc = subprocess.run(
+        [sys.executable, "-m", "tungtungarmor", "obfuscate",
+         str(root / "main.py"), "-o", str(out)],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "scanned imports" in proc.stdout
+    assert not (out / "scratch.py").exists()
+    assert not (out / "debug_app").exists()
+
+
+def test_no_follow_imports_processes_tree(tmp_path):
+    """--no-follow-imports falls back to whole-tree and hits the broken file."""
+    root = _make_project(tmp_path)
+    out = tmp_path / "out2"
+    env = {"PATH": "/usr/bin:/bin", "PYTHONPATH": str(ROOT / "src")}
+    proc = subprocess.run(
+        [sys.executable, "-m", "tungtungarmor", "obfuscate",
+         str(root), "--no-follow-imports", "-o", str(out)],
+        capture_output=True, text=True, env=env,
+    )
+    assert proc.returncode != 0  # the broken debug file is a SyntaxError
+
+
 def test_include_forces_dynamic_module(tmp_path):
     root = _make_project(tmp_path)
     # scratch.py is not imported; force it in via include

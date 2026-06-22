@@ -83,6 +83,18 @@ def _include_list(args, cfg):
     return includes or None
 
 
+def _follow_enabled(args, cfg, default):
+    """Effective follow-imports setting: --no-follow-imports > --follow-imports
+    > config > *default*."""
+    if getattr(args, "no_follow_imports", False):
+        return False
+    if getattr(args, "follow_imports", False):
+        return True
+    if "follow_imports" in cfg:
+        return bool(cfg["follow_imports"])
+    return default
+
+
 def _build_protection(args, cfg) -> ProtectionOptions:
     sec = cfg.get("protection", {})
     expire = _parse_expire_value(_resolve(args, "expire", sec, "expire", None))
@@ -137,10 +149,12 @@ def _cmd_obfuscate(args) -> int:
 
     only_files = None
     pack_target = target
-    if _resolve(args, "follow_imports", cfg, "follow_imports", False):
+    # Default to follow-imports when the target is a single entry script.
+    if _follow_enabled(args, cfg, default=target.is_file()):
         if not target.is_file():
-            print("error: --follow-imports needs an entry script as target "
-                  "(point it at e.g. main.py)", file=sys.stderr)
+            print("error: follow-imports needs an entry script as target "
+                  "(point it at e.g. main.py, or pass --no-follow-imports)",
+                  file=sys.stderr)
             return 2
         from .scanner import discover
         root = Path(cfg.get("project_root") or target.parent).resolve()
@@ -219,7 +233,7 @@ def _cmd_pyinstaller(args) -> int:
             options=options,
             protection=protection,
             exclude=_exclude_list(args, cfg),
-            follow_imports=_resolve(args, "follow_imports", cfg, "follow_imports", False),
+            follow_imports=_follow_enabled(args, cfg, default=True),
             include=_include_list(args, cfg),
             extra_args=extra or None,
             **build_kwargs,
@@ -295,8 +309,11 @@ def build_parser() -> argparse.ArgumentParser:
                             "(repeatable; .venv, build, dist, .git, __pycache__ are "
                             "always skipped)")
         p.add_argument("--follow-imports", action="store_true", default=SUPPRESS,
-                       help="obfuscate only modules reachable from the entry by "
-                            "following imports (PyArmor-style), not the whole tree")
+                       help="(default) obfuscate only modules reachable from the "
+                            "entry by following imports, PyArmor-style")
+        p.add_argument("--no-follow-imports", action="store_true", default=SUPPRESS,
+                       help="disable import-following; obfuscate the whole tree "
+                            "(honours --exclude)")
         p.add_argument("--include", action="append", default=SUPPRESS, metavar="MODULE",
                        help="force-include a module/glob the scanner can't see, e.g. "
                             "dynamic imports (repeatable)")
