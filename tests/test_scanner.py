@@ -113,3 +113,27 @@ def test_include_forces_dynamic_module(tmp_path):
     files, _ = discover(root / "main.py", root, include=["scratch"])
     rel = {f.relative_to(root).as_posix() for f in files}
     assert "scratch.py" in rel
+
+
+def test_external_thirdparty_imports_collected(tmp_path):
+    root = tmp_path / "proj2"
+    root.mkdir()
+    (root / "main.py").write_text(
+        "import os\n"                                  # stdlib -> filtered
+        "import sys, json\n"                           # stdlib -> filtered
+        "import requests\n"                            # third-party
+        "from moviepy.editor import VideoFileClip\n"   # third-party submodule
+        "from . import nothing_local\n"                # relative -> not external
+        "import helper2\n"                             # local
+    )
+    (root / "helper2.py").write_text("import numpy\n")  # third-party in a dep
+
+    scan = discover(root / "main.py", root)
+    assert "requests" in scan.external_modules
+    assert "moviepy.editor" in scan.external_modules
+    assert "numpy" in scan.external_modules
+    # stdlib and relative imports must not leak in
+    assert "os" not in scan.external_modules
+    assert "json" not in scan.external_modules
+    assert not any(m.startswith("nothing_local") for m in scan.external_modules)
+    assert "helper2" in scan.local_modules

@@ -131,8 +131,14 @@ Benefits:
 
 - No need to exclude `.venv`, `debug/`, vendored copies, etc. — they're simply
   never reached.
-- Discovered local modules are auto-added as PyInstaller `--hidden-import`, so
-  you only have to list **third-party** packages yourself.
+- **Auto hidden-imports.** Because the obfuscated source is encrypted,
+  PyInstaller can't see any `import` inside it. tungtungarmor therefore feeds
+  PyInstaller every module your source imports — both your own modules **and
+  the third-party ones it finds**, including submodules like `moviepy.editor`
+  that are easy to forget. Standard-library imports are filtered out.
+- You usually only need to list third-party modules that are imported
+  *dynamically inside the library itself* (e.g. `uvicorn.loops.auto`), since
+  those never appear in your source.
 - For imports the scanner can't see statically (dynamic `importlib`, plugins),
   force them in with `--include modulename` / `--include "plugins/*.py"` (or
   `include = [...]` in the config).

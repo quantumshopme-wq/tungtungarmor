@@ -14,8 +14,23 @@ standard-library and third-party (site-packages) imports are ignored.
 from __future__ import annotations
 
 import ast
+import sys
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Iterable, List, Optional, Set, Tuple
+
+_STDLIB = frozenset(getattr(sys, "stdlib_module_names", ()))
+
+
+@dataclass
+class ScanResult:
+    files: Set[Path] = field(default_factory=set)
+    local_modules: Set[str] = field(default_factory=set)
+    external_modules: Set[str] = field(default_factory=set)
+
+    # Backwards-compatible unpacking: ``files, modules = discover(...)``
+    def __iter__(self):
+        return iter((self.files, self.local_modules))
 
 
 def _containing_package(f: Path, root: Path) -> str:
@@ -55,8 +70,12 @@ def _module_to_files(dotted: str, root: Path) -> List[Path]:
     return files
 
 
-def _resolve_importfrom(node: ast.ImportFrom, current_pkg: str) -> List[str]:
-    """Dotted module targets referenced by a ``from ... import ...``."""
+def _importfrom_targets(node: ast.ImportFrom, current_pkg: str):
+    """Return ``(base, is_relative, expanded)`` for a ``from ... import ...``.
+
+    *base* is the module the names are imported from; *expanded* are the
+    ``base.name`` candidates (a name may itself be a submodule).
+    """
     if node.level and node.level > 0:
         pkg_parts = current_pkg.split(".") if current_pkg else []
         up = node.level - 1
@@ -64,16 +83,16 @@ def _resolve_importfrom(node: ast.ImportFrom, current_pkg: str) -> List[str]:
         if node.module:
             base_parts = base_parts + node.module.split(".")
         base = ".".join(base_parts)
+        is_relative = True
     else:
         base = node.module or ""
-    if not base:
-        return []
-    targets = [base]
-    # imported names might themselves be submodules (from pkg import sub)
-    for alias in node.names:
-        if alias.name != "*":
-            targets.append(base + "." + alias.name)
-    return targets
+        is_relative = False
+    expanded = []
+    if base:
+        for alias in node.names:
+            if alias.name != "*":
+                expanded.append(base + "." + alias.name)
+    return base, is_relative, expanded
 
 
 def _seed_include(inc: str, root: Path) -> List[Path]:
@@ -87,8 +106,13 @@ def discover(
     root: Path,
     include: Optional[Iterable[str]] = None,
     on_warn: Optional[Callable[[str], None]] = None,
-) -> Tuple[Set[Path], Set[str]]:
-    """Return ``(files, module_names)`` reachable from *entry* under *root*.
+) -> "ScanResult":
+    """Discover project files reachable from *entry* under *root*.
+
+    Returns a :class:`ScanResult` with the local ``files``, their
+    ``local_modules`` (dotted names), and the third-party ``external_modules``
+    imported by the source (stdlib filtered out). The result also unpacks as
+    ``files, local_modules`` for convenience.
 
     *include* lets you force extra modules/globs in for imports that can't be
     found statically (dynamic ``importlib`` use, plugins, etc.).
@@ -97,9 +121,22 @@ def discover(
     entry = Path(entry).resolve()
 
     files: Set[Path] = set()
+    external: Set[str] = set()
     queue: List[Path] = [entry]
     for inc in include or []:
         queue.extend(_seed_include(inc, root))
+
+    def _consider(dotted: str, *, allow_external: bool):
+        """Enqueue local files for *dotted*; record external otherwise."""
+        local = _module_to_files(dotted, root)
+        if local:
+            for cand in local:
+                if cand not in files:
+                    queue.append(cand)
+            return True
+        if allow_external and dotted and dotted.split(".")[0] not in _STDLIB:
+            external.add(dotted)
+        return False
 
     while queue:
         f = queue.pop()
@@ -121,17 +158,19 @@ def discover(
                 on_warn(f"skipping imports of {f} ({exc.__class__.__name__})")
             continue
         pkg = _containing_package(f, root)
-        targets: List[str] = []
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
-                targets.extend(alias.name for alias in node.names)
+                for alias in node.names:
+                    _consider(alias.name, allow_external=True)
             elif isinstance(node, ast.ImportFrom):
-                targets.extend(_resolve_importfrom(node, pkg))
-        for dotted in targets:
-            for cand in _module_to_files(dotted, root):
-                if cand not in files:
-                    queue.append(cand)
+                base, is_relative, expanded = _importfrom_targets(node, pkg)
+                if base:
+                    # relative imports are always local; don't mark external
+                    _consider(base, allow_external=not is_relative)
+                # imported names may be submodules -- follow only if local
+                for sub in expanded:
+                    _consider(sub, allow_external=False)
 
-    module_names = {_file_to_module(f, root) for f in files}
-    module_names.discard("")
-    return files, module_names
+    local_modules = {_file_to_module(f, root) for f in files}
+    local_modules.discard("")
+    return ScanResult(files=files, local_modules=local_modules, external_modules=external)

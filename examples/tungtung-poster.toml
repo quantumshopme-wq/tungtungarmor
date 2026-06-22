@@ -31,10 +31,14 @@ windowed = true          # setara -w
 icon = "assets/icons/TungTungPoster.ico"
 noupx = true
 
-# Catatan: modul LOKAL project (api_server, core, utils, ui, automations, ...)
-# TIDAK perlu didaftarkan di sini -- dengan follow_imports=true mereka terdeteksi
-# otomatis dan ditambahkan sebagai --hidden-import. Daftar di bawah hanya untuk
-# library pihak ketiga (third-party).
+# Catatan: tungtungarmor OTOMATIS menambahkan --hidden-import untuk:
+#   * semua modul LOKAL project (api_server, core, utils, ui, automations, ...)
+#   * semua import THIRD-PARTY yang terlihat di source Anda (mis moviepy.editor,
+#     fastapi, numpy, dst) -- karena source terenkripsi, PyInstaller tak bisa
+#     melihatnya sendiri.
+# Jadi daftar di bawah hanya perlu untuk modul yang di-import SECARA DINAMIS di
+# dalam library-nya (tidak muncul di source Anda), mis uvicorn.loops.auto.
+# Boleh dibiarkan lengkap sebagai pengaman.
 hidden_imports = [
     "adbutils", "certifi", "fastapi", "cffi",
     "charset_normalizer", "customtkinter", "imageio", "IPython", "lxml",

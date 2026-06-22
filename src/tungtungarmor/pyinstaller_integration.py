@@ -149,25 +149,31 @@ def build(
     # 1. Obfuscate the project into the work dir.
     if follow_imports:
         from .scanner import discover
-        files, modules = discover(
+        scan = discover(
             entry, project_root, include,
             on_warn=lambda m: print("tungtungarmor: warn:", m),
         )
         print(f"tungtungarmor: scanned imports from {entry.name} -> "
-              f"{len(files)} project file(s)")
+              f"{len(scan.files)} project file(s), "
+              f"{len(scan.external_modules)} third-party import(s)")
         result = pack(project_root, work_dir, options,
-                      protection=protection, only_files=sorted(files))
-        # Auto-add discovered local modules as hidden imports so PyInstaller
-        # bundles them (their real imports are hidden inside encrypted blobs).
+                      protection=protection, only_files=sorted(scan.files))
+        # Because the real imports are hidden inside encrypted blobs, PyInstaller
+        # can't see them -- so feed it every module the source imports as a
+        # hidden import: the project's own modules AND the third-party modules
+        # (incl. submodules like moviepy.editor) found while scanning.
         entry_module = None
         try:
             entry_module = entry.relative_to(project_root).with_suffix("").as_posix().replace("/", ".")
         except ValueError:
             pass
+        auto_mods = set(scan.local_modules) | set(scan.external_modules)
+        auto_mods.discard("")
+        auto_mods.discard(entry_module)
+        auto_mods.discard(options.runtime_pkg)
         auto_hidden: List[str] = []
-        for mod in sorted(modules):
-            if mod and mod != entry_module:
-                auto_hidden += ["--hidden-import", mod]
+        for mod in sorted(auto_mods):
+            auto_hidden += ["--hidden-import", mod]
         extra = auto_hidden + extra
     else:
         result = pack(project_root, work_dir, options,
