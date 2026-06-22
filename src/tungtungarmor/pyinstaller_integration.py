@@ -188,7 +188,9 @@ def build(
         "--collect-submodules", options.runtime_pkg,
         "--distpath", str(Path(dist_dir).resolve()),
         "--workpath", str(work_dir / "_pyi_work"),
-        "--specpath", str(work_dir),
+        # Spec lives in the project root so relative --add-data / -i paths
+        # (e.g. "assets;assets") resolve against the project, not the obf dir.
+        "--specpath", str(project_root),
         "--noconfirm",
     ]
     # Only inject defaults the user hasn't overridden, to avoid duplicate flags.
