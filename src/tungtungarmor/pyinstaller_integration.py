@@ -107,6 +107,8 @@ def build(
     options: Optional[ObfuscateOptions] = None,
     protection=None,
     exclude: Optional[List[str]] = None,
+    follow_imports: bool = False,
+    include: Optional[List[str]] = None,
     pyi_options: Optional[str] = None,
     extra_args: Optional[List[str]] = None,
 ) -> int:
@@ -144,8 +146,32 @@ def build(
     if extra_args:
         extra.extend(extra_args)
 
-    # 1. Obfuscate the whole project tree into the work dir.
-    result = pack(project_root, work_dir, options, protection=protection, exclude=exclude)
+    # 1. Obfuscate the project into the work dir.
+    if follow_imports:
+        from .scanner import discover
+        files, modules = discover(
+            entry, project_root, include,
+            on_warn=lambda m: print("tungtungarmor: warn:", m),
+        )
+        print(f"tungtungarmor: scanned imports from {entry.name} -> "
+              f"{len(files)} project file(s)")
+        result = pack(project_root, work_dir, options,
+                      protection=protection, only_files=sorted(files))
+        # Auto-add discovered local modules as hidden imports so PyInstaller
+        # bundles them (their real imports are hidden inside encrypted blobs).
+        entry_module = None
+        try:
+            entry_module = entry.relative_to(project_root).with_suffix("").as_posix().replace("/", ".")
+        except ValueError:
+            pass
+        auto_hidden: List[str] = []
+        for mod in sorted(modules):
+            if mod and mod != entry_module:
+                auto_hidden += ["--hidden-import", mod]
+        extra = auto_hidden + extra
+    else:
+        result = pack(project_root, work_dir, options,
+                      protection=protection, exclude=exclude)
 
     # 2. Locate the obfuscated entry inside the work dir.
     rel_entry = entry.relative_to(project_root)

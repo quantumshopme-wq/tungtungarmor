@@ -109,6 +109,29 @@ line.
 > Note: data separators differ per OS — `assets;assets` on Windows,
 > `assets:assets` on Linux/macOS (same as PyInstaller itself).
 
+### Follow imports (obfuscate only your project, like PyArmor)
+
+By default `obfuscate` on a directory processes **every** `.py` in the tree,
+which forces long exclude lists and trips over unrelated/broken scratch files.
+With `--follow-imports` tungtungarmor instead starts at the entry script and
+follows imports, obfuscating **only modules that belong to your project** —
+standard-library and third-party packages are ignored.
+
+```bash
+tungtungarmor obfuscate main.py --follow-imports -o dist_protected
+# or in the pyinstaller flow / config:  follow_imports = true
+```
+
+Benefits:
+
+- No need to exclude `.venv`, `debug/`, vendored copies, etc. — they're simply
+  never reached.
+- Discovered local modules are auto-added as PyInstaller `--hidden-import`, so
+  you only have to list **third-party** packages yourself.
+- For imports the scanner can't see statically (dynamic `importlib`, plugins),
+  force them in with `--include modulename` / `--include "plugins/*.py"` (or
+  `include = [...]` in the config).
+
 ### Config file (recommended for big projects)
 
 Long `--hidden-import` / `--add-data` / `--copy-metadata` lists belong in a
@@ -162,6 +185,8 @@ tungtungarmor pyinstaller --config build/prod.toml --name "Prod Build"
 | `--min-string-length N` | Only encrypt strings of length ≥ N |
 | `--optimize {0,1,2}` | `compile()` level (2 strips asserts + docstrings) |
 | `--runtime-pkg NAME` | Rename the generated runtime package |
+| `--follow-imports` | Obfuscate only modules reachable from the entry (PyArmor-style), not the whole tree |
+| `--include MODULE` | Force-include a module/glob the scanner can't see (dynamic imports) |
 | `--exclude PATTERN` | Extra dir/glob to skip (`.venv`, `build`, `dist`, `.git`, `__pycache__` already skipped) |
 | `--config FILE` | Load options from a TOML/JSON config file |
 | `--show-key` | (`obfuscate`) print the generated key |

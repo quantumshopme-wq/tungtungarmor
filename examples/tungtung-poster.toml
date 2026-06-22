@@ -13,9 +13,14 @@
 output = "dist_protected"
 optimize = 2
 
-# Lewati folder ini saat mengobfuscate seluruh tree (selain default .venv/build/
-# dist/.git/__pycache__ yang sudah otomatis dilewati).
-exclude = ["dist_sniper", "Certificate", "dist_protected"]
+# Telusuri import dari entry (main.py) dan HANYA obfuscate modul milik project
+# (seperti PyArmor). File tak terkait (debug_app, scratch, dll) otomatis diabaikan,
+# jadi tidak perlu daftar exclude panjang.
+follow_imports = true
+
+# Untuk import dinamis yang tidak terlihat scanner (importlib/plugin), tambahkan
+# di sini sebagai nama modul atau glob, mis: include = ["plugins/*.py"]
+include = []
 
 [pyinstaller]
 entry = "main.py"
@@ -26,13 +31,17 @@ windowed = true          # setara -w
 icon = "assets/icons/TungTungPoster.ico"
 noupx = true
 
+# Catatan: modul LOKAL project (api_server, core, utils, ui, automations, ...)
+# TIDAK perlu didaftarkan di sini -- dengan follow_imports=true mereka terdeteksi
+# otomatis dan ditambahkan sebagai --hidden-import. Daftar di bawah hanya untuk
+# library pihak ketiga (third-party).
 hidden_imports = [
-    "api_server", "adbutils", "certifi", "fastapi", "cffi",
+    "adbutils", "certifi", "fastapi", "cffi",
     "charset_normalizer", "customtkinter", "imageio", "IPython", "lxml",
     "markupsafe", "moviepy", "numpy", "openpyxl", "pandas", "PIL", "psutil",
     "pydantic", "py", "dateutil", "pytz", "requests", "retry", "setuptools",
     "uiautomator2", "websocket", "watchdog", "selenium",
-    "undetected_chromedriver", "cv2", "utils", "tkcalendar",
+    "undetected_chromedriver", "cv2", "tkcalendar",
     "webdriver_manager.core.os_manager",
     "selenium.webdriver.common.service", "selenium.webdriver.chrome.service",
     "pathlib", "urllib3", "packaging", "packaging.version",

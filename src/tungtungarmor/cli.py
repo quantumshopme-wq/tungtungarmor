@@ -76,6 +76,13 @@ def _exclude_list(args, cfg):
     return excludes or None
 
 
+def _include_list(args, cfg):
+    includes = list(cfg.get("include", []) or [])
+    if getattr(args, "include", None):
+        includes.extend(args.include)
+    return includes or None
+
+
 def _build_protection(args, cfg) -> ProtectionOptions:
     sec = cfg.get("protection", {})
     expire = _parse_expire_value(_resolve(args, "expire", sec, "expire", None))
@@ -127,7 +134,24 @@ def _cmd_obfuscate(args) -> int:
     options = _build_options(args, cfg)
     protection = _build_protection(args, cfg)
     exclude = _exclude_list(args, cfg)
-    result = pack(target, Path(output), options, protection=protection, exclude=exclude)
+
+    only_files = None
+    pack_target = target
+    if _resolve(args, "follow_imports", cfg, "follow_imports", False):
+        if not target.is_file():
+            print("error: --follow-imports needs an entry script as target "
+                  "(point it at e.g. main.py)", file=sys.stderr)
+            return 2
+        from .scanner import discover
+        root = Path(cfg.get("project_root") or target.parent).resolve()
+        files, _ = discover(target.resolve(), root, _include_list(args, cfg),
+                            on_warn=lambda m: print("tungtungarmor: warn:", m))
+        print(f"tungtungarmor: scanned imports from {target.name} -> {len(files)} file(s)")
+        only_files = sorted(files)
+        pack_target = root
+
+    result = pack(pack_target, Path(output), options, protection=protection,
+                  exclude=exclude, only_files=only_files)
     print(f"tungtungarmor: protected {len(result.obfuscated_files)} file(s)")
     print(f"  output:  {result.output_dir}")
     print(f"  runtime: {result.runtime_dir}")
@@ -195,6 +219,8 @@ def _cmd_pyinstaller(args) -> int:
             options=options,
             protection=protection,
             exclude=_exclude_list(args, cfg),
+            follow_imports=_resolve(args, "follow_imports", cfg, "follow_imports", False),
+            include=_include_list(args, cfg),
             extra_args=extra or None,
             **build_kwargs,
         )
@@ -268,6 +294,12 @@ def build_parser() -> argparse.ArgumentParser:
                        help="extra dir name / glob to skip when obfuscating a tree "
                             "(repeatable; .venv, build, dist, .git, __pycache__ are "
                             "always skipped)")
+        p.add_argument("--follow-imports", action="store_true", default=SUPPRESS,
+                       help="obfuscate only modules reachable from the entry by "
+                            "following imports (PyArmor-style), not the whole tree")
+        p.add_argument("--include", action="append", default=SUPPRESS, metavar="MODULE",
+                       help="force-include a module/glob the scanner can't see, e.g. "
+                            "dynamic imports (repeatable)")
         # --- runtime protection (PyArmor-style) ---
         g = p.add_argument_group("protection")
         g.add_argument("--expire", default=SUPPRESS, metavar="YYYY-MM-DD",

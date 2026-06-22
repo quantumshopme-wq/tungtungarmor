@@ -152,6 +152,7 @@ def pack(
     key: Optional[bytes] = None,
     protection=None,
     exclude: Optional[List[str]] = None,
+    only_files: Optional[List[Path]] = None,
 ) -> PackResult:
     """Obfuscate a file or directory tree into *output_dir*.
 
@@ -159,6 +160,10 @@ def pack(
     the generated runtime package. Common junk dirs (.venv, build, dist, .git,
     __pycache__, ...) are skipped automatically; pass *exclude* to add more
     (directory names or glob patterns relative to *target*).
+
+    If *only_files* is given (an explicit list of ``.py`` files under *target*,
+    e.g. from the import scanner), exactly those are obfuscated and the tree is
+    not walked -- no data files are copied.
     """
     options = options or ObfuscateOptions()
     key = key or new_key()
@@ -169,7 +174,13 @@ def pack(
 
     result = PackResult(output_dir=output_dir, key=key)
 
-    if target.is_file():
+    if only_files is not None:
+        for src in only_files:
+            src = Path(src).resolve()
+            rel = src.relative_to(target)
+            dst = output_dir / rel
+            result.obfuscated_files.append(obfuscate_file(src, dst, key, options))
+    elif target.is_file():
         dst = output_dir / target.name
         result.obfuscated_files.append(obfuscate_file(target, dst, key, options))
     else:
