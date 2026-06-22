@@ -106,6 +106,7 @@ def build(
     console: bool = True,
     options: Optional[ObfuscateOptions] = None,
     protection=None,
+    exclude: Optional[List[str]] = None,
     pyi_options: Optional[str] = None,
     extra_args: Optional[List[str]] = None,
 ) -> int:
@@ -144,7 +145,7 @@ def build(
         extra.extend(extra_args)
 
     # 1. Obfuscate the whole project tree into the work dir.
-    result = pack(project_root, work_dir, options, protection=protection)
+    result = pack(project_root, work_dir, options, protection=protection, exclude=exclude)
 
     # 2. Locate the obfuscated entry inside the work dir.
     rel_entry = entry.relative_to(project_root)

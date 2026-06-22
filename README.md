@@ -162,6 +162,7 @@ tungtungarmor pyinstaller --config build/prod.toml --name "Prod Build"
 | `--min-string-length N` | Only encrypt strings of length ≥ N |
 | `--optimize {0,1,2}` | `compile()` level (2 strips asserts + docstrings) |
 | `--runtime-pkg NAME` | Rename the generated runtime package |
+| `--exclude PATTERN` | Extra dir/glob to skip (`.venv`, `build`, `dist`, `.git`, `__pycache__` already skipped) |
 | `--config FILE` | Load options from a TOML/JSON config file |
 | `--show-key` | (`obfuscate`) print the generated key |
 

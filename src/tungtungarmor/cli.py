@@ -69,6 +69,13 @@ def _parse_expire_value(value):
     return parse_expire(s)
 
 
+def _exclude_list(args, cfg):
+    excludes = list(cfg.get("exclude", []) or [])
+    if getattr(args, "exclude", None):
+        excludes.extend(args.exclude)
+    return excludes or None
+
+
 def _build_protection(args, cfg) -> ProtectionOptions:
     sec = cfg.get("protection", {})
     expire = _parse_expire_value(_resolve(args, "expire", sec, "expire", None))
@@ -119,7 +126,8 @@ def _cmd_obfuscate(args) -> int:
     output = _resolve(args, "output", cfg, "output", "dist_protected")
     options = _build_options(args, cfg)
     protection = _build_protection(args, cfg)
-    result = pack(target, Path(output), options, protection=protection)
+    exclude = _exclude_list(args, cfg)
+    result = pack(target, Path(output), options, protection=protection, exclude=exclude)
     print(f"tungtungarmor: protected {len(result.obfuscated_files)} file(s)")
     print(f"  output:  {result.output_dir}")
     print(f"  runtime: {result.runtime_dir}")
@@ -186,6 +194,7 @@ def _cmd_pyinstaller(args) -> int:
             console=not windowed,
             options=options,
             protection=protection,
+            exclude=_exclude_list(args, cfg),
             extra_args=extra or None,
             **build_kwargs,
         )
@@ -255,6 +264,10 @@ def build_parser() -> argparse.ArgumentParser:
                        help="compile() optimization level (strips asserts/docstrings)")
         p.add_argument("--runtime-pkg", default=SUPPRESS,
                        help="name of the generated runtime package")
+        p.add_argument("--exclude", action="append", default=SUPPRESS, metavar="PATTERN",
+                       help="extra dir name / glob to skip when obfuscating a tree "
+                            "(repeatable; .venv, build, dist, .git, __pycache__ are "
+                            "always skipped)")
         # --- runtime protection (PyArmor-style) ---
         g = p.add_argument_group("protection")
         g.add_argument("--expire", default=SUPPRESS, metavar="YYYY-MM-DD",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import fnmatch
 import marshal
 import os
 import textwrap
@@ -107,13 +108,39 @@ def _is_within(path: Path, parent: Path) -> bool:
         return False
 
 
-def _iter_py_files(root: Path, skip: Path):
+# Directory names that are never obfuscated/copied unless explicitly included.
+DEFAULT_EXCLUDE_DIRS = {
+    ".git", ".hg", ".svn", ".venv", "venv", "env", ".env",
+    "__pycache__", ".mypy_cache", ".pytest_cache", ".ruff_cache",
+    "build", "dist", "dist_protected", ".pyarmor", ".tox",
+    "node_modules", ".idea", ".vscode",
+}
+
+
+def _excluded(rel: Path, extra_patterns) -> bool:
+    parts = rel.parts
+    for part in parts:
+        if part in DEFAULT_EXCLUDE_DIRS or part.endswith(".egg-info"):
+            return True
+    rel_posix = rel.as_posix()
+    for pattern in extra_patterns:
+        pat = pattern.replace("\\", "/").rstrip("/")
+        if fnmatch.fnmatch(rel_posix, pat) or fnmatch.fnmatch(rel_posix, pat + "/*"):
+            return True
+        if pat in parts:  # bare directory name
+            return True
+    return False
+
+
+def _iter_py_files(root: Path, skip: Path, exclude):
     for path in root.rglob("*.py"):
         # Never re-obfuscate a previously generated runtime.
         if DEFAULT_RUNTIME_PKG in path.parts:
             continue
         # Never descend into the output directory (it may be nested in root).
         if _is_within(path, skip):
+            continue
+        if _excluded(path.relative_to(root), exclude):
             continue
         yield path
 
@@ -124,14 +151,18 @@ def pack(
     options: Optional[ObfuscateOptions] = None,
     key: Optional[bytes] = None,
     protection=None,
+    exclude: Optional[List[str]] = None,
 ) -> PackResult:
     """Obfuscate a file or directory tree into *output_dir*.
 
     The output directory mirrors the input layout and additionally contains
-    the generated runtime package.
+    the generated runtime package. Common junk dirs (.venv, build, dist, .git,
+    __pycache__, ...) are skipped automatically; pass *exclude* to add more
+    (directory names or glob patterns relative to *target*).
     """
     options = options or ObfuscateOptions()
     key = key or new_key()
+    exclude = exclude or []
     target = Path(target).resolve()
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -142,7 +173,7 @@ def pack(
         dst = output_dir / target.name
         result.obfuscated_files.append(obfuscate_file(target, dst, key, options))
     else:
-        for src in _iter_py_files(target, output_dir):
+        for src in _iter_py_files(target, output_dir, exclude):
             rel = src.relative_to(target)
             dst = output_dir / rel
             result.obfuscated_files.append(obfuscate_file(src, dst, key, options))
@@ -155,6 +186,8 @@ def pack(
             if _is_within(src, output_dir):
                 continue
             rel = src.relative_to(target)
+            if _excluded(rel, exclude):
+                continue
             dst = output_dir / rel
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_bytes(src.read_bytes())

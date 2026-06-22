@@ -1,0 +1,60 @@
+# tungtungarmor config -- konversi dari build2.bat (PyArmor) "TungTung Poster".
+#
+# Taruh file ini sebagai  tungtungarmor.toml  di root project (D:\Tool\Auto Upload),
+# lalu cukup jalankan:
+#
+#     tungtungarmor pyinstaller
+#
+# Catatan:
+# * --hidden-import pyarmor_runtime_009542 TIDAK perlu -- tungtungarmor menyuntik
+#   runtime-nya sendiri secara otomatis.
+# * Pemisah --add-data pakai ';' (Windows). Kalau build di Linux/macOS ganti ke ':'.
+
+output = "dist_protected"
+optimize = 2
+
+# Lewati folder ini saat mengobfuscate seluruh tree (selain default .venv/build/
+# dist/.git/__pycache__ yang sudah otomatis dilewati).
+exclude = ["dist_sniper", "Certificate", "dist_protected"]
+
+[pyinstaller]
+entry = "main.py"
+project_root = "."
+name = "TungTung Poster"
+onedir = true            # setara `pyarmor gen --pack onedir`
+windowed = true          # setara -w
+icon = "assets/icons/TungTungPoster.ico"
+noupx = true
+
+hidden_imports = [
+    "api_server", "adbutils", "certifi", "fastapi", "cffi",
+    "charset_normalizer", "customtkinter", "imageio", "IPython", "lxml",
+    "markupsafe", "moviepy", "numpy", "openpyxl", "pandas", "PIL", "psutil",
+    "pydantic", "py", "dateutil", "pytz", "requests", "retry", "setuptools",
+    "uiautomator2", "websocket", "watchdog", "selenium",
+    "undetected_chromedriver", "cv2", "utils", "tkcalendar",
+    "webdriver_manager.core.os_manager",
+    "selenium.webdriver.common.service", "selenium.webdriver.chrome.service",
+    "pathlib", "urllib3", "packaging", "packaging.version",
+    "uvicorn", "uvicorn.logging", "uvicorn.loops", "uvicorn.loops.auto",
+    "uvicorn.protocols", "uvicorn.protocols.http", "uvicorn.protocols.http.auto",
+    "uvicorn.protocols.http.h11", "uvicorn.lifespan", "uvicorn.lifespan.on",
+    "anyio", "anyio.backends._asyncio", "uvicorn.protocols.http.h11_impl",
+    "uvicorn.protocols.websockets.websockets_impl", "uvicorn.selectors",
+    "starlette",
+]
+
+collect_data = ["pandas", "uiautomator2", "imageio"]
+
+copy_metadata = [
+    "imageio", "moviepy", "numpy", "Pillow", "pandas", "uiautomator2",
+    "adbutils", "fastapi", "uvicorn", "starlette", "pydantic", "requests",
+    "packaging",
+]
+
+add_data = [
+    "assets;assets",
+    "templates;templates",
+    "dist_sniper;dist_sniper",
+    "locales;locales",
+]

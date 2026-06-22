@@ -76,6 +76,26 @@ def test_no_plaintext_string_leaks(tmp_path):
     assert "super-secret-token-value" not in protected
 
 
+def test_excludes_venv_and_custom(tmp_path):
+    proj = tmp_path / "proj"
+    (proj / ".venv" / "lib").mkdir(parents=True)
+    (proj / "vendored").mkdir()
+    (proj / "main.py").write_text("print('main')\n")
+    (proj / ".venv" / "lib" / "thing.py").write_text("print('venv')\n")
+    (proj / "vendored" / "skip.py").write_text("print('vendored')\n")
+
+    out = tmp_path / "out"
+    result = pack(proj, out, ObfuscateOptions(), exclude=["vendored"])
+
+    names = {p.name for p in result.obfuscated_files}
+    assert "main.py" in names
+    # .venv (default) and vendored (custom) must NOT be obfuscated or copied
+    assert not (out / ".venv").exists()
+    assert not (out / "vendored").exists()
+    assert "thing.py" not in names
+    assert "skip.py" not in names
+
+
 def test_package_tree(tmp_path):
     pkg = tmp_path / "mypkg"
     pkg.mkdir()
