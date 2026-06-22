@@ -8,7 +8,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from tungtungarmor import ObfuscateOptions, pack  # noqa: E402
-from tungtungarmor.scanner import discover  # noqa: E402
+from tungtungarmor.scanner import (  # noqa: E402
+    ScanResult,
+    discover,
+    select_hidden_imports,
+)
 
 
 def _make_project(tmp_path):
@@ -152,3 +156,37 @@ def test_selenium_style_submodule_added_as_hidden_import(tmp_path):
     scan = discover(root / "main.py", root)
     assert "selenium.webdriver.support" in scan.external_modules
     assert "selenium.webdriver.support.expected_conditions" in scan.external_modules
+
+
+def test_select_hidden_imports_filters_junk():
+    scan = ScanResult(
+        files=set(),
+        local_modules={"core", "core.engine", "utils.helpers"},
+        external_modules={
+            # real installed modules / submodules -> kept
+            "urllib3",
+            "urllib3.util.retry",
+            # class/attribute names -> dropped (not modules)
+            "urllib3.HTTPConnectionPool",
+            "json.nonexistent_attr",
+            # local attribute leak (top-level is a local package) -> dropped
+            "core.engine.Engine",
+            "utils.helpers.do_thing",
+            # entry/dunder/runtime -> dropped
+            "__main__",
+            "__main__._",
+        },
+    )
+    hidden = select_hidden_imports(scan, entry_module="main",
+                                   runtime_pkg="tungtungarmor_runtime")
+    # local modules kept
+    assert "core" in hidden and "core.engine" in hidden and "utils.helpers" in hidden
+    # real third-party module + submodule kept
+    assert "urllib3" in hidden
+    assert "urllib3.util.retry" in hidden
+    # junk dropped
+    assert "urllib3.HTTPConnectionPool" not in hidden
+    assert "json.nonexistent_attr" not in hidden
+    assert "core.engine.Engine" not in hidden
+    assert "utils.helpers.do_thing" not in hidden
+    assert not any(m.startswith("__main__") for m in hidden)

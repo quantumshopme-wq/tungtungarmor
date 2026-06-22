@@ -177,3 +177,47 @@ def discover(
     local_modules = {_file_to_module(f, root) for f in files}
     local_modules.discard("")
     return ScanResult(files=files, local_modules=local_modules, external_modules=external)
+
+
+def select_hidden_imports(scan, *, entry_module=None, runtime_pkg=None):
+    """Pick the modules to pass to PyInstaller as ``--hidden-import``.
+
+    The encrypted source is invisible to PyInstaller, so we feed it every
+    module the code imports. But a ``from pkg import Thing`` records
+    ``pkg.Thing`` too, and ``Thing`` is usually a class/function, not a module
+    -- passing those just produces noisy "hidden import not found" lines. So:
+
+    * local project modules (known to be modules from their files) are kept;
+    * a third-party top-level name is kept as-is (cheap, and it triggers hooks);
+    * a dotted third-party name is kept only if it really resolves to a module
+      (verified with :func:`importlib.util.find_spec`), which keeps real
+      submodules like ``selenium.webdriver.support.expected_conditions`` but
+      drops class/attribute names like ``fastapi.FastAPI``;
+    * names under a local package, ``__main__`` and the runtime package are
+      never emitted.
+    """
+    import importlib.util
+
+    local_modules = set(scan.local_modules)
+    local_tops = {m.split(".")[0] for m in local_modules}
+
+    def _resolvable(name):
+        try:
+            return importlib.util.find_spec(name) is not None
+        except BaseException:
+            # Parent not importable / import error / native panic: skip quietly.
+            return False
+
+    hidden = set(local_modules)
+    for ext in scan.external_modules:
+        top = ext.split(".")[0]
+        if not top or top in local_tops:
+            continue  # local attribute leak (e.g. core.mod.SomeClass)
+        if "." not in ext:
+            hidden.add(ext)          # top-level third-party package
+        elif _resolvable(ext):
+            hidden.add(ext)          # real submodule
+
+    for junk in ("", "__main__", entry_module, runtime_pkg):
+        hidden.discard(junk)
+    return sorted(m for m in hidden if m and not m.startswith("__main__"))

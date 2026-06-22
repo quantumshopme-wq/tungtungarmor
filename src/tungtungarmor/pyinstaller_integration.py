@@ -148,34 +148,30 @@ def build(
 
     # 1. Obfuscate the project into the work dir.
     if follow_imports:
-        from .scanner import discover
+        from .scanner import discover, select_hidden_imports
         scan = discover(
             entry, project_root, include,
             on_warn=lambda m: print("tungtungarmor: warn:", m),
         )
-        print(f"tungtungarmor: scanned imports from {entry.name} -> "
-              f"{len(scan.files)} project file(s), "
-              f"{len(scan.external_modules)} third-party import(s)")
         result = pack(project_root, work_dir, options,
                       protection=protection, only_files=sorted(scan.files))
         # The real imports are hidden inside encrypted blobs, so PyInstaller
-        # can't see them. Feed it every module the source imports as a hidden
-        # import: the project's own modules AND the specific third-party modules
-        # / submodules found while scanning (e.g. moviepy.editor,
-        # selenium.webdriver.support.expected_conditions). This is precise --
-        # only what the code actually imports -- so it won't drag in a package's
-        # broken optional submodules the way a blanket --collect-submodules can.
+        # can't see them. Feed it the modules the source imports -- the project's
+        # own modules plus the third-party modules/submodules found while
+        # scanning, validated so only real modules are passed (keeps e.g.
+        # selenium.webdriver.support.expected_conditions, drops class names).
         entry_module = None
         try:
             entry_module = entry.relative_to(project_root).with_suffix("").as_posix().replace("/", ".")
         except ValueError:
             pass
-        auto_mods = set(scan.local_modules) | set(scan.external_modules)
-        auto_mods.discard("")
-        auto_mods.discard(entry_module)
-        auto_mods.discard(options.runtime_pkg)
+        hidden_mods = select_hidden_imports(
+            scan, entry_module=entry_module, runtime_pkg=options.runtime_pkg,
+        )
+        print(f"tungtungarmor: scanned imports from {entry.name} -> "
+              f"{len(scan.files)} project file(s), {len(hidden_mods)} hidden import(s)")
         auto_hidden: List[str] = []
-        for mod in sorted(auto_mods):
+        for mod in hidden_mods:
             auto_hidden += ["--hidden-import", mod]
         extra = auto_hidden + extra
     else:
