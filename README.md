@@ -211,6 +211,35 @@ tungtungarmor pyinstaller --config build/prod.toml --name "Prod Build"
 | `--config FILE` | Load options from a TOML/JSON config file |
 | `--show-key` | (`obfuscate`) print the generated key |
 
+## Compile with Nuitka instead of PyInstaller
+
+```bash
+tungtungarmor nuitka app.py --name myapp            # standalone folder
+tungtungarmor nuitka app.py --onefile --windowed    # single-file GUI binary
+tungtungarmor nuitka                                 # all options from config
+```
+
+The usual problem with "obfuscate then Nuitka" is that Nuitka follows imports to
+decide what to compile, but the obfuscated source hides its imports inside
+encrypted blobs — so most dependencies get dropped. tungtungarmor already
+discovered every import while scanning, so it passes Nuitka explicit
+`--include-module` (your modules) and `--include-package` (third-party
+packages) flags. Nothing is invisible, and `--collect`/hidden-import guesswork
+isn't needed.
+
+Config lives in a `[nuitka]` section (see the example file): `entry`,
+`project_root`, `name`, `onefile`, `windowed`, `icon`, `output_dir`,
+`data_dirs`, `data_files`, `plugins`, `include_packages`, `extra_args`. The
+`tk-inter` plugin is auto-enabled when a Tk GUI is detected.
+
+> **Important caveats.** Your own modules run as encrypted bytecode through the
+> runtime's `exec` — Nuitka does **not** compile them to C (they stay protected
+> by tungtungarmor's encryption); Nuitka compiles the bootstrap, the runtime and
+> the *dependencies*. For heavy scientific stacks (numpy/pandas/scipy/...)
+> compiling those dependencies can be very slow or hit library-specific issues —
+> for such apps PyInstaller is usually the pragmatic choice. tungtungarmor makes
+> the build *correct*; it can't make Nuitka fast on a huge dependency tree.
+
 ## Runtime protection (PyArmor-style)
 
 Add license-style guards that run *before* your code does. They work with both

@@ -21,6 +21,7 @@ dependencies = []
 
 [project.optional-dependencies]
 pyinstaller = ["pyinstaller>=5.0"]
+nuitka = ["nuitka>=1.5"]
 
 [project.scripts]
 tungtungarmor = "tungtungarmor.cli:main"

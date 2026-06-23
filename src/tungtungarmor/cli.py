@@ -247,6 +247,62 @@ def _cmd_pyinstaller(args) -> int:
     return rc
 
 
+def _cmd_nuitka(args) -> int:
+    from .nuitka_integration import build as nuitka_build
+
+    cfg = _load_cfg(args)
+    nk = cfg.get("nuitka", {})
+
+    entry = getattr(args, "entry", None) or nk.get("entry") or cfg.get("pyinstaller", {}).get("entry")
+    if not entry:
+        print("error: no entry script given (pass one on the CLI or set "
+              "[nuitka] entry in the config)", file=sys.stderr)
+        return 2
+    entry = Path(entry)
+    if not entry.exists():
+        print(f"error: entry not found: {entry}", file=sys.stderr)
+        return 2
+
+    options = _build_options(args, cfg)
+    protection = _build_protection(args, cfg)
+    name = _resolve(args, "name", nk, "name", None)
+    onefile = _resolve(args, "onefile", nk, "onefile", False)
+    windowed = _resolve(args, "windowed", nk, "windowed", False)
+    project_root = _resolve(args, "project_root", nk, "project_root", None)
+
+    extra = list(nk.get("extra_args", []) or [])
+    icon = nk.get("icon")
+    if icon:
+        extra.append(f"--windows-icon-from-ico={icon}")
+    if getattr(args, "nuitka_args", None):
+        extra.extend(args.nuitka_args)
+
+    try:
+        rc = nuitka_build(
+            entry,
+            project_root=Path(project_root) if project_root else None,
+            output_dir=Path(nk.get("output_dir", "dist")),
+            name=name,
+            onefile=onefile,
+            console=not windowed,
+            options=options,
+            protection=protection,
+            include=_include_list(args, cfg),
+            data_dirs=list(nk.get("data_dirs", []) or []),
+            data_files=list(nk.get("data_files", []) or []),
+            plugins=list(nk.get("plugins", []) or []),
+            include_packages=list(nk.get("include_packages", []) or []),
+            extra_args=extra or None,
+        )
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if rc == 0:
+        print("tungtungarmor: nuitka build finished -> see dist/")
+        _report_protection(protection)
+    return rc
+
+
 def _cmd_machine_id(args) -> int:
     print(machine_id())
     return 0
@@ -381,6 +437,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_lic.add_argument("--note", default="", help="free-text note stored in the license")
     p_lic.add_argument("-o", "--output", help=f"output file (default: {DEFAULT_LICENSE_NAME})")
     p_lic.set_defaults(func=_cmd_license)
+
+    # nuitka
+    p_nk = sub.add_parser("nuitka", help="obfuscate then compile with Nuitka")
+    p_nk.add_argument("entry", nargs="?", default=SUPPRESS, help="entry-point .py script")
+    p_nk.add_argument("--project-root", default=SUPPRESS,
+                      help="project root to obfuscate (default: entry's dir)")
+    p_nk.add_argument("--name", default=SUPPRESS, help="output binary name (default: entry stem)")
+    p_nk.add_argument("--onefile", action="store_true", default=SUPPRESS,
+                      help="produce a single-file binary (default: standalone folder)")
+    p_nk.add_argument("--windowed", action="store_true", default=SUPPRESS,
+                      help="GUI app, no console window")
+    p_nk.add_argument("--nuitka-args", nargs=argparse.REMAINDER, default=SUPPRESS,
+                      help="pass remaining args straight to Nuitka")
+    add_common(p_nk)
+    p_nk.set_defaults(func=_cmd_nuitka)
 
     return parser
 

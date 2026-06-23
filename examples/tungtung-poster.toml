@@ -71,3 +71,23 @@ add_data = [
     "dist_sniper;dist_sniper",
     "locales;locales",
 ]
+
+# --- Alternatif: compile dengan Nuitka (tungtungarmor nuitka) ---
+# CATATAN: modul Anda tetap berjalan sebagai bytecode terenkripsi (tidak
+# di-compile ke C oleh Nuitka) -- proteksi tetap dari tungtungarmor. Nuitka
+# meng-compile bootstrap, runtime, dan DEPENDENCY. Untuk app berat
+# (numpy/pandas/scipy) compile dependency bisa sangat lama; PyInstaller di atas
+# biasanya lebih praktis. tungtungarmor otomatis menambah --include-module
+# (modul lokal) dan --include-package (paket third-party) dari hasil scan,
+# sehingga "library tidak ikut" tidak terjadi.
+[nuitka]
+entry = "main.py"
+project_root = "."
+name = "TungTung Poster"
+onefile = false          # false = folder standalone
+windowed = true
+icon = "assets/icons/TungTungPoster.ico"
+output_dir = "dist"
+data_dirs = ["assets=assets", "templates=templates", "dist_sniper=dist_sniper", "locales=locales"]
+plugins = []             # mis ["tk-inter", "anti-bloat"]; tk-inter auto-aktif utk Tk
+extra_args = []          # flag Nuitka tambahan
