@@ -187,8 +187,12 @@ def test_select_hidden_imports_filters_junk():
             # real installed modules / submodules -> kept
             "urllib3",
             "urllib3.util.retry",
-            # class/attribute names -> dropped (not modules)
+            # class/attribute names under a real PACKAGE -> dropped (find_spec None)
             "urllib3.HTTPConnectionPool",
+            # class/attribute names under a plain MODULE -> dropped (parent not a package)
+            "abc.ABC",
+            "datetime.date",
+            "moviepy.editor.VideoFileClip",  # moviepy.editor is a module (if installed)
             "json.nonexistent_attr",
             # local attribute leak (top-level is a local package) -> dropped
             "core.engine.Engine",
@@ -207,6 +211,8 @@ def test_select_hidden_imports_filters_junk():
     assert "urllib3.util.retry" in hidden
     # junk dropped
     assert "urllib3.HTTPConnectionPool" not in hidden
+    assert "abc.ABC" not in hidden
+    assert "datetime.date" not in hidden
     assert "json.nonexistent_attr" not in hidden
     assert "core.engine.Engine" not in hidden
     assert "utils.helpers.do_thing" not in hidden

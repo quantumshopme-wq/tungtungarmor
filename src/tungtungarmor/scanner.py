@@ -208,15 +208,27 @@ def select_hidden_imports(scan, *, entry_module=None, runtime_pkg=None):
     local_tops = {m.split(".")[0] for m in local_modules}
 
     def _resolvable(name):
+        # *name* is always dotted here. Decide whether it's a real submodule
+        # (keep) or an attribute/class such as abc.ABC or moviepy.editor.Clip
+        # (drop), staying fail-safe when a package can't be imported at build.
+        parent = name.rpartition(".")[0]
         try:
-            # None means "definitely not a module" (e.g. a class/attribute name
-            # like fastapi.FastAPI) -> drop it.
+            parent_spec = importlib.util.find_spec(parent)
+        except BaseException:
+            # Parent package itself failed to import (headless GUI libs, native
+            # panics, optional deps): we can't tell, so keep it.
+            return True
+        if parent_spec is None:
+            return True
+        if parent_spec.submodule_search_locations is None:
+            # Parent is a plain module, not a package -> "parent.name" can only
+            # be an attribute (class/function), never a submodule -> drop it.
+            return False
+        # Parent is a package: keep only if the child really resolves to a
+        # module; if importing the package fails at build, keep it (fail-safe).
+        try:
             return importlib.util.find_spec(name) is not None
         except BaseException:
-            # Parent couldn't be imported at build time (headless GUI libs,
-            # native panics, optional deps). We can't prove it's not a module,
-            # so keep it -- dropping a real submodule would break the exe, and
-            # PyInstaller will just warn if it truly isn't there.
             return True
 
     hidden = set(local_modules)
