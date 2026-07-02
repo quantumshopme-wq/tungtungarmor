@@ -158,6 +158,27 @@ def test_selenium_style_submodule_added_as_hidden_import(tmp_path):
     assert "selenium.webdriver.support.expected_conditions" in scan.external_modules
 
 
+def test_stdlib_submodules_are_kept(tmp_path):
+    """Bare stdlib is skipped, but stdlib SUBMODULES the source imports must be
+    kept so PyInstaller bundles them (the import is hidden in the blob)."""
+    root = tmp_path / "proj4"
+    root.mkdir()
+    (root / "main.py").write_text(
+        "import os\n"                              # bare stdlib -> skipped
+        "from tkinter import colorchooser\n"       # stdlib submodule -> kept
+        "import logging.handlers\n"                # stdlib submodule -> kept
+        "print('ok')\n"
+    )
+    scan = discover(root / "main.py", root)
+    assert "tkinter.colorchooser" in scan.external_modules
+    assert "logging.handlers" in scan.external_modules
+    assert "os" not in scan.external_modules
+
+    hidden = select_hidden_imports(scan)
+    assert "tkinter.colorchooser" in hidden   # real module -> validated & kept
+    assert "logging.handlers" in hidden
+
+
 def test_select_hidden_imports_filters_junk():
     scan = ScanResult(
         files=set(),

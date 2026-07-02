@@ -134,7 +134,13 @@ def discover(
                 if cand not in files:
                     queue.append(cand)
             return True
-        if allow_external and dotted and dotted.split(".")[0] not in _STDLIB:
+        if allow_external and dotted:
+            # Skip only bare top-level stdlib modules (os, json, ...): those are
+            # always available. But KEEP stdlib *submodules* (tkinter.colorchooser,
+            # logging.handlers, xml.etree.ElementTree, ...): the obfuscated source
+            # hides the import, so PyInstaller won't bundle them unless we say so.
+            if "." not in dotted and dotted in _STDLIB:
+                return False
             external.add(dotted)
         return False
 
@@ -203,10 +209,15 @@ def select_hidden_imports(scan, *, entry_module=None, runtime_pkg=None):
 
     def _resolvable(name):
         try:
+            # None means "definitely not a module" (e.g. a class/attribute name
+            # like fastapi.FastAPI) -> drop it.
             return importlib.util.find_spec(name) is not None
         except BaseException:
-            # Parent not importable / import error / native panic: skip quietly.
-            return False
+            # Parent couldn't be imported at build time (headless GUI libs,
+            # native panics, optional deps). We can't prove it's not a module,
+            # so keep it -- dropping a real submodule would break the exe, and
+            # PyInstaller will just warn if it truly isn't there.
+            return True
 
     hidden = set(local_modules)
     for ext in scan.external_modules:
