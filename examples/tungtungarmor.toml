@@ -5,7 +5,7 @@
 # --- obfuscation options (top level) ---
 output = "dist_protected"
 encrypt_strings = true
-rename_locals = false
+rename_locals = true   # experimental: rename local vars/params for +1 layer — build & test after enabling
 optimize = 2
 runtime_pkg = "tungtungarmor_runtime"
 
