@@ -5,9 +5,17 @@
 # --- obfuscation options (top level) ---
 output = "dist_protected"
 encrypt_strings = true
-rename_locals = true   # experimental: rename local vars/params for +1 layer — build & test after enabling
+min_string_length = 2       # only encrypt string literals of at least this length
+rename_locals = true        # experimental: rename local vars/params for +1 layer
+rename_globals = false      # experimental: rename private module-level names (_helper)
+strip_bytecode = true       # remove absolute source paths from the bytecode (default)
 optimize = 2
 runtime_pkg = "tungtungarmor_runtime"
+
+# --- key-derivation mode (optional): don't ship the key, derive it at runtime ---
+# kdf = "pbkdf2"            # build reads the secret from $TTA_SECRET; only salt+iters are stored
+# kdf_secret_env = "TTA_SECRET"
+# kdf_iters = 200000
 
 # --- PyInstaller build options ---
 [pyinstaller]

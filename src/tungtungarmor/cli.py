@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shlex
 import sys
 from pathlib import Path
 
 from . import __version__
 from .config import assemble_pyi_flags, find_default_config, load_config
+from .crypto import DEFAULT_KDF_ITERS
 from .packer import DEFAULT_RUNTIME_PKG, ObfuscateOptions, pack
 from .protection import (
     DEFAULT_LICENSE_NAME,
@@ -49,12 +51,41 @@ def _build_options(args, cfg) -> ObfuscateOptions:
         encrypt_strings = not getattr(args, "no_encrypt_strings")
     else:
         encrypt_strings = cfg.get("encrypt_strings", True)
+
+    if hasattr(args, "no_strip_bytecode"):
+        strip_bytecode = not getattr(args, "no_strip_bytecode")
+    else:
+        strip_bytecode = bool(cfg.get("strip_bytecode", True))
+
+    kdf = _resolve(args, "kdf", cfg, "kdf", None) or None
+    secret_env = _resolve(args, "secret_env", cfg, "kdf_secret_env", "TTA_SECRET")
+    kdf_secret = None
+    if kdf:
+        if kdf not in ("pbkdf2",):
+            print(f"error: unknown --kdf mode: {kdf!r} (supported: pbkdf2)", file=sys.stderr)
+            raise SystemExit(2)
+        if getattr(args, "password", False):
+            import getpass
+            kdf_secret = getpass.getpass("tungtungarmor build secret: ")
+        else:
+            kdf_secret = os.environ.get(secret_env)
+        if not kdf_secret:
+            print(f"error: --kdf needs a build secret; set ${secret_env} "
+                  f"(or pass --password to be prompted)", file=sys.stderr)
+            raise SystemExit(2)
+
     return ObfuscateOptions(
         encrypt_strings=encrypt_strings,
         rename_locals=_resolve(args, "rename_locals", cfg, "rename_locals", False),
-        min_string_length=_resolve(args, "min_string_length", cfg, "min_string_length", 1),
+        rename_globals=_resolve(args, "rename_globals", cfg, "rename_globals", False),
+        min_string_length=_resolve(args, "min_string_length", cfg, "min_string_length", 2),
         optimize=_resolve(args, "optimize", cfg, "optimize", 0),
+        strip_bytecode=strip_bytecode,
         runtime_pkg=_resolve(args, "runtime_pkg", cfg, "runtime_pkg", DEFAULT_RUNTIME_PKG),
+        kdf=kdf,
+        kdf_secret=kdf_secret,
+        kdf_secret_env=secret_env,
+        kdf_iters=int(_resolve(args, "kdf_iters", cfg, "kdf_iters", DEFAULT_KDF_ITERS)),
     )
 
 
@@ -338,6 +369,62 @@ def _cmd_license(args) -> int:
     return 0
 
 
+def _cmd_deobfuscate(args) -> int:
+    import base64
+
+    from .deobfuscator import (
+        DeobfuscateError,
+        disassemble,
+        recover_code,
+        try_decompile,
+        write_pyc,
+    )
+
+    target = Path(args.target)
+    if not target.is_file():
+        print(f"error: not a file: {target}", file=sys.stderr)
+        return 2
+
+    if getattr(args, "key", None):
+        key = base64.b85decode(args.key)
+    else:
+        # Reading the key from a KDF-mode runtime needs the secret in the env.
+        try:
+            key = read_key_from_runtime(Path(args.runtime))
+        except SystemExit:
+            print("error: this runtime derives its key from a secret; set the "
+                  "secret's environment variable and retry", file=sys.stderr)
+            return 2
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 2
+
+    try:
+        code = recover_code(target.read_text(encoding="utf-8"), key)
+    except DeobfuscateError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    out = Path(getattr(args, "output", None) or target.with_suffix(".pyc").name)
+    write_pyc(code, out)
+    print(f"tungtungarmor: recovered code object -> {out}")
+    print("  (for inspection/disassembly/decompilation; string literals remain "
+          "as __armor_s__(...) calls -- decrypt them with the same key)")
+
+    if getattr(args, "decompile", False):
+        source = try_decompile(out)
+        if source is None:
+            print("  (no decompiler found; install 'decompyle3' for source recovery)")
+        else:
+            src_out = out.with_suffix(".py")
+            src_out.write_text(source, encoding="utf-8")
+            print(f"  decompiled source -> {src_out}")
+
+    if getattr(args, "dis", False):
+        print(disassemble(code))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tungtungarmor",
@@ -354,8 +441,27 @@ def build_parser() -> argparse.ArgumentParser:
                        help="disable string-literal encryption")
         p.add_argument("--rename-locals", action="store_true", default=SUPPRESS,
                        help="rename function-local variables (experimental)")
+        p.add_argument("--rename-globals", action="store_true", default=SUPPRESS,
+                       help="rename private module-level names, e.g. _helper "
+                            "(experimental, single-module scope)")
+        p.add_argument("--no-strip-bytecode", action="store_true", default=SUPPRESS,
+                       help="keep the original source path in the bytecode "
+                            "(by default it is stripped)")
         p.add_argument("--min-string-length", type=int, default=SUPPRESS,
                        help="only encrypt string literals of at least this length")
+        # --- key-derivation mode (key is NOT shipped) ---
+        k = p.add_argument_group("key derivation")
+        k.add_argument("--kdf", default=SUPPRESS, metavar="MODE", choices=("pbkdf2",),
+                       help="derive the key at runtime from a secret instead of "
+                            "shipping it (mode: pbkdf2)")
+        k.add_argument("--secret-env", default=SUPPRESS, metavar="NAME",
+                       help="env var holding the build secret and read at runtime "
+                            "(default: TTA_SECRET)")
+        k.add_argument("--password", action="store_true", default=SUPPRESS,
+                       help="prompt for the build secret instead of reading it from "
+                            "the environment")
+        k.add_argument("--kdf-iters", type=int, default=SUPPRESS, metavar="N",
+                       help=f"PBKDF2 iterations (default: {DEFAULT_KDF_ITERS})")
         p.add_argument("--optimize", type=int, choices=(0, 1, 2), default=SUPPRESS,
                        help="compile() optimization level (strips asserts/docstrings)")
         p.add_argument("--runtime-pkg", default=SUPPRESS,
@@ -437,6 +543,22 @@ def build_parser() -> argparse.ArgumentParser:
     p_lic.add_argument("--note", default="", help="free-text note stored in the license")
     p_lic.add_argument("-o", "--output", help=f"output file (default: {DEFAULT_LICENSE_NAME})")
     p_lic.set_defaults(func=_cmd_license)
+
+    # deobfuscate (round-trip your own protected files, for debugging)
+    p_deob = sub.add_parser(
+        "deobfuscate",
+        help="recover the code object from YOUR OWN protected file (debug/round-trip)",
+    )
+    p_deob.add_argument("target", help="a tungtungarmor-protected .py file")
+    dsrc = p_deob.add_mutually_exclusive_group(required=True)
+    dsrc.add_argument("--runtime", help="path to the generated runtime package (reads its key)")
+    dsrc.add_argument("--key", help="build key as a base85 string")
+    p_deob.add_argument("-o", "--output", help="write the recovered .pyc here "
+                                               "(default: <target>.pyc)")
+    p_deob.add_argument("--dis", action="store_true", help="print a bytecode disassembly")
+    p_deob.add_argument("--decompile", action="store_true",
+                        help="attempt source recovery via decompyle3/uncompyle6 if installed")
+    p_deob.set_defaults(func=_cmd_deobfuscate)
 
     # nuitka
     p_nk = sub.add_parser("nuitka", help="obfuscate then compile with Nuitka")

@@ -6,21 +6,34 @@ import base64
 import fnmatch
 import marshal
 import os
+import sys
 import textwrap
+import types
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
-from .crypto import encrypt, new_key
+from .crypto import DEFAULT_KDF_ITERS, derive_key_from_secret, encrypt, new_key
 from .runtime_template import render_runtime
 from .transformer import transform_source
 
 DEFAULT_RUNTIME_PKG = "tungtungarmor_runtime"
 
+# Opaque filename baked into every code object in place of the real source path
+# (which would otherwise leak the developer's absolute directory layout).
+STRIPPED_FILENAME = "<tungtungarmor>"
+
 BOOTSTRAP_TEMPLATE = '''\
 # -*- coding: utf-8 -*-
 # This file was protected by tungtungarmor (https://github.com/quantumshopme-wq/tungtungarmor)
 # Do not edit -- the original source has been compiled, encrypted and embedded below.
+import sys as __sys
+if __sys.version_info[:2] != ({py_major}, {py_minor}):
+    __sys.stderr.write(
+        "tungtungarmor: this program was built for Python {py_major}.{py_minor} "
+        "but is running on %d.%d\\n" % __sys.version_info[:2]
+    )
+    raise SystemExit(1)
 import base64 as __b64
 from {runtime_pkg} import __armor_exec__
 
@@ -35,9 +48,26 @@ __armor_exec__(__b64.b85decode(__armor_data__), __name__, globals())
 class ObfuscateOptions:
     encrypt_strings: bool = True
     rename_locals: bool = False
-    min_string_length: int = 1
+    rename_globals: bool = False
+    min_string_length: int = 2
     optimize: int = 0  # passed to compile(): 0/1/2
+    strip_bytecode: bool = True
     runtime_pkg: str = DEFAULT_RUNTIME_PKG
+    # --- key-derivation mode (key is NOT shipped) ---
+    kdf: Optional[str] = None            # None (ship key) or "pbkdf2" (derive)
+    kdf_secret: Optional[str] = None     # build-time secret (never stored)
+    kdf_secret_env: str = "TTA_SECRET"   # env var the runtime reads the secret from
+    kdf_iters: int = DEFAULT_KDF_ITERS
+
+
+@dataclass
+class KeyMaterial:
+    """How the encryption key is produced and (optionally) shipped."""
+    key: bytes
+    kdf: Optional[str] = None
+    salt: bytes = b""
+    iters: int = 0
+    secret_env: str = "TTA_SECRET"
 
 
 @dataclass
@@ -46,6 +76,38 @@ class PackResult:
     obfuscated_files: List[Path] = field(default_factory=list)
     runtime_dir: Optional[Path] = None
     key: bytes = b""
+
+
+def _key_material(options: ObfuscateOptions, key: Optional[bytes]) -> KeyMaterial:
+    """Resolve the key + how it will be stored, honouring KDF mode."""
+    if options.kdf == "pbkdf2":
+        secret = options.kdf_secret
+        if not secret:
+            raise ValueError(
+                "kdf='pbkdf2' requires a secret at build time "
+                "(set options.kdf_secret / --key-env / --password)"
+            )
+        salt = os.urandom(16)
+        derived = derive_key_from_secret(secret, salt, options.kdf_iters)
+        return KeyMaterial(key=derived, kdf="pbkdf2", salt=salt,
+                           iters=options.kdf_iters, secret_env=options.kdf_secret_env)
+    if options.kdf not in (None, "", "none"):
+        raise ValueError(f"unknown kdf mode: {options.kdf!r}")
+    return KeyMaterial(key=key or new_key())
+
+
+def strip_debug_info(code: types.CodeType) -> types.CodeType:
+    """Recursively replace the embedded source path with an opaque name.
+
+    ``compile()`` bakes the real (often absolute) source path into every code
+    object's ``co_filename``; this removes that leak while keeping line tables
+    intact so tracebacks still format correctly.
+    """
+    consts = tuple(
+        strip_debug_info(c) if isinstance(c, types.CodeType) else c
+        for c in code.co_consts
+    )
+    return code.replace(co_consts=consts, co_filename=STRIPPED_FILENAME)
 
 
 def _wrap_b85(blob: bytes, width: int = 72) -> str:
@@ -67,12 +129,17 @@ def obfuscate_source(
         key,
         encrypt_strings=options.encrypt_strings,
         rename_locals=options.rename_locals,
+        rename_globals=options.rename_globals,
         min_string_length=options.min_string_length,
         filename=filename,
     )
     code = compile(tree, filename, "exec", optimize=options.optimize)
+    if options.strip_bytecode:
+        code = strip_debug_info(code)
     blob = encrypt(marshal.dumps(code), key)
     return BOOTSTRAP_TEMPLATE.format(
+        py_major=sys.version_info[0],
+        py_minor=sys.version_info[1],
         runtime_pkg=options.runtime_pkg,
         chunks=_wrap_b85(blob),
     )
@@ -91,11 +158,11 @@ def obfuscate_file(
     return dst
 
 
-def write_runtime(output_dir: Path, key: bytes, options: ObfuscateOptions,
+def write_runtime(output_dir: Path, material: KeyMaterial, options: ObfuscateOptions,
                   protection=None) -> Path:
     runtime_dir = output_dir / options.runtime_pkg
     runtime_dir.mkdir(parents=True, exist_ok=True)
-    for name, content in render_runtime(key, protection).items():
+    for name, content in render_runtime(material, protection).items():
         (runtime_dir / name).write_text(content, encoding="utf-8")
     return runtime_dir
 
@@ -166,7 +233,8 @@ def pack(
     not walked -- no data files are copied.
     """
     options = options or ObfuscateOptions()
-    key = key or new_key()
+    material = _key_material(options, key)
+    key = material.key
     exclude = exclude or []
     target = Path(target).resolve()
     output_dir = Path(output_dir).resolve()
@@ -203,5 +271,5 @@ def pack(
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_bytes(src.read_bytes())
 
-    result.runtime_dir = write_runtime(output_dir, key, options, protection)
+    result.runtime_dir = write_runtime(output_dir, material, options, protection)
     return result
