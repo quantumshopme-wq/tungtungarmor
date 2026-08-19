@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tungtungarmor"
+version = "0.1.0"
+description = "A pure-Python source obfuscator for Python scripts with PyInstaller integration (a lightweight, open-source alternative to PyArmor)."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.8"
+authors = [{ name = "quantumshopme-wq" }]
+keywords = ["obfuscation", "protection", "pyarmor", "pyinstaller", "bytecode"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Security",
+    "Topic :: Software Development :: Build Tools",
+]
+dependencies = []
+
+[project.optional-dependencies]
+pyinstaller = ["pyinstaller>=5.0"]
+nuitka = ["nuitka>=1.5"]
+
+[project.scripts]
+tungtungarmor = "tungtungarmor.cli:main"
+tta = "tungtungarmor.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+tungtungarmor = ["templates/*.tmpl"]
