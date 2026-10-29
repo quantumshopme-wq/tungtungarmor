@@ -184,15 +184,16 @@ def test_select_hidden_imports_filters_junk():
         files=set(),
         local_modules={"core", "core.engine", "utils.helpers"},
         external_modules={
-            # real installed modules / submodules -> kept
-            "urllib3",
-            "urllib3.util.retry",
-            # class/attribute names under a real PACKAGE -> dropped (find_spec None)
-            "urllib3.HTTPConnectionPool",
-            # class/attribute names under a plain MODULE -> dropped (parent not a package)
+            # real stdlib package + submodule -> kept (always present, no
+            # dependency on third-party installs so the test is deterministic)
+            "email",
+            "email.mime.text",
+            # class/function under a real PACKAGE -> dropped (find_spec None)
+            "email.message_from_string",
+            # class/attribute under a plain MODULE -> dropped (parent not a package)
             "abc.ABC",
             "datetime.date",
-            "moviepy.editor.VideoFileClip",  # moviepy.editor is a module (if installed)
+            "os.getcwd",
             "json.nonexistent_attr",
             # local attribute leak (top-level is a local package) -> dropped
             "core.engine.Engine",
@@ -206,13 +207,14 @@ def test_select_hidden_imports_filters_junk():
                                    runtime_pkg="tungtungarmor_runtime")
     # local modules kept
     assert "core" in hidden and "core.engine" in hidden and "utils.helpers" in hidden
-    # real third-party module + submodule kept
-    assert "urllib3" in hidden
-    assert "urllib3.util.retry" in hidden
+    # real stdlib module + submodule kept
+    assert "email" in hidden
+    assert "email.mime.text" in hidden
     # junk dropped
-    assert "urllib3.HTTPConnectionPool" not in hidden
+    assert "email.message_from_string" not in hidden
     assert "abc.ABC" not in hidden
     assert "datetime.date" not in hidden
+    assert "os.getcwd" not in hidden
     assert "json.nonexistent_attr" not in hidden
     assert "core.engine.Engine" not in hidden
     assert "utils.helpers.do_thing" not in hidden

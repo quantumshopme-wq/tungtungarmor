@@ -8,13 +8,6 @@ Public API
 """
 
 from .crypto import decrypt, derive_key_from_secret, encrypt, new_key
-from .deobfuscator import (
-    DeobfuscateError,
-    code_to_pyc,
-    disassemble,
-    recover_code,
-    recover_code_file,
-)
 from .packer import (
     DEFAULT_RUNTIME_PKG,
     KeyMaterial,
@@ -51,11 +44,6 @@ __all__ = [
     "decrypt",
     "new_key",
     "derive_key_from_secret",
-    "recover_code",
-    "recover_code_file",
-    "code_to_pyc",
-    "disassemble",
-    "DeobfuscateError",
     "ProtectionOptions",
     "DEFAULT_LICENSE_NAME",
     "machine_id",

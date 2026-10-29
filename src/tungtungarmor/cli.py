@@ -369,62 +369,6 @@ def _cmd_license(args) -> int:
     return 0
 
 
-def _cmd_deobfuscate(args) -> int:
-    import base64
-
-    from .deobfuscator import (
-        DeobfuscateError,
-        disassemble,
-        recover_code,
-        try_decompile,
-        write_pyc,
-    )
-
-    target = Path(args.target)
-    if not target.is_file():
-        print(f"error: not a file: {target}", file=sys.stderr)
-        return 2
-
-    if getattr(args, "key", None):
-        key = base64.b85decode(args.key)
-    else:
-        # Reading the key from a KDF-mode runtime needs the secret in the env.
-        try:
-            key = read_key_from_runtime(Path(args.runtime))
-        except SystemExit:
-            print("error: this runtime derives its key from a secret; set the "
-                  "secret's environment variable and retry", file=sys.stderr)
-            return 2
-        except (FileNotFoundError, ValueError) as exc:
-            print(f"error: {exc}", file=sys.stderr)
-            return 2
-
-    try:
-        code = recover_code(target.read_text(encoding="utf-8"), key)
-    except DeobfuscateError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-
-    out = Path(getattr(args, "output", None) or target.with_suffix(".pyc").name)
-    write_pyc(code, out)
-    print(f"tungtungarmor: recovered code object -> {out}")
-    print("  (for inspection/disassembly/decompilation; string literals remain "
-          "as __armor_s__(...) calls -- decrypt them with the same key)")
-
-    if getattr(args, "decompile", False):
-        source = try_decompile(out)
-        if source is None:
-            print("  (no decompiler found; install 'decompyle3' for source recovery)")
-        else:
-            src_out = out.with_suffix(".py")
-            src_out.write_text(source, encoding="utf-8")
-            print(f"  decompiled source -> {src_out}")
-
-    if getattr(args, "dis", False):
-        print(disassemble(code))
-    return 0
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="tungtungarmor",
@@ -543,22 +487,6 @@ def build_parser() -> argparse.ArgumentParser:
     p_lic.add_argument("--note", default="", help="free-text note stored in the license")
     p_lic.add_argument("-o", "--output", help=f"output file (default: {DEFAULT_LICENSE_NAME})")
     p_lic.set_defaults(func=_cmd_license)
-
-    # deobfuscate (round-trip your own protected files, for debugging)
-    p_deob = sub.add_parser(
-        "deobfuscate",
-        help="recover the code object from YOUR OWN protected file (debug/round-trip)",
-    )
-    p_deob.add_argument("target", help="a tungtungarmor-protected .py file")
-    dsrc = p_deob.add_mutually_exclusive_group(required=True)
-    dsrc.add_argument("--runtime", help="path to the generated runtime package (reads its key)")
-    dsrc.add_argument("--key", help="build key as a base85 string")
-    p_deob.add_argument("-o", "--output", help="write the recovered .pyc here "
-                                               "(default: <target>.pyc)")
-    p_deob.add_argument("--dis", action="store_true", help="print a bytecode disassembly")
-    p_deob.add_argument("--decompile", action="store_true",
-                        help="attempt source recovery via decompyle3/uncompyle6 if installed")
-    p_deob.set_defaults(func=_cmd_deobfuscate)
 
     # nuitka
     p_nk = sub.add_parser("nuitka", help="obfuscate then compile with Nuitka")

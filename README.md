@@ -31,8 +31,6 @@ your .py  ──►  AST transforms  ──►  compile to bytecode  ──►  
   the cipher and the MAC.
 - 🩹 **Self-integrity check** — the runtime verifies its own crypto/loader files
   weren't patched (best-effort; strongest in key-derivation mode).
-- 🔁 **Round-trip deobfuscator** — recover the code object from *your own*
-  protected files for debugging (`tungtungarmor deobfuscate`).
 - 🪪 **Local & global renaming** (optional, experimental) — rename function
   parameters/locals, and private module-level names (`_helper`), to opaque
   names; skips unsafe functions/modules
@@ -334,33 +332,10 @@ to be prompted at build time instead of using the environment, and
 when you need *real* encryption (server-side code, password-gated tools), not
 just deterrence.
 
-## Deobfuscate your own files (round-trip / debugging)
-
-You can reverse tungtungarmor's own format on code **you** protected — handy for
-debugging or verifying a build. It recovers the code object and writes a
-standard `.pyc` you can disassemble or feed to a decompiler:
-
-```bash
-tungtungarmor deobfuscate dist_protected/app.py \
-    --runtime dist_protected/tungtungarmor_runtime \
-    -o app.pyc --dis                 # also print a bytecode disassembly
-
-# or provide the key directly, and try a decompiler if one is installed:
-tungtungarmor deobfuscate app.py --key <b85> --decompile
-```
-
-For a key-derivation-mode build, set the secret's environment variable so the
-runtime key can be reproduced. String literals in the recovered code object
-remain as `__armor_s__(...)` calls — decrypt them with the same key. This tool
-only undoes *your* obfuscation; it is not a generic decompiler.
-
 ## Python API
 
 ```python
-from tungtungarmor import (
-    pack, ObfuscateOptions, ProtectionOptions, parse_expire,
-    recover_code_file, new_key,
-)
+from tungtungarmor import pack, ObfuscateOptions, ProtectionOptions, parse_expire
 
 pack(
     "myproject",
