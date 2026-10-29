@@ -9,6 +9,15 @@ self-contained runtime that decrypts and runs it on the fly. The distributed
 files contain **no readable source and no plaintext string literals** — just an
 encrypted, marshalled blob.
 
+> **What it's for.** tungtungarmor is a defensive **intellectual-property
+> protection** tool for software authors: keep your own commercial source from
+> being casually copied, and enforce licensing (trial expiry, per-seat
+> activation) for software you own or are authorized to protect. Use it only on
+> code you have the right to ship. It is **not** a way to hide software from its
+> users, from antivirus, or from a system owner, and it is not designed to
+> conceal malicious behaviour — the openly documented runtime below makes clear
+> it hides nothing from the person running the program.
+
 ```text
 your .py  ──►  AST transforms  ──►  compile to bytecode  ──►  marshal
           ──►  encrypt (SHA-256 CTR + HMAC)  ──►  bootstrap loader + runtime
@@ -29,8 +38,9 @@ your .py  ──►  AST transforms  ──►  compile to bytecode  ──►  
 - 🧽 **Stripped bytecode** — the developer's absolute source paths are removed
   from every code object (`co_filename`), and separate HKDF sub-keys are used for
   the cipher and the MAC.
-- 🩹 **Self-integrity check** — the runtime verifies its own crypto/loader files
-  weren't patched (best-effort; strongest in key-derivation mode).
+- 🩹 **Tamper notice** — the runtime checks that its own crypto/loader files
+  still match the build, so accidental or casual modification is caught
+  (best-effort; strongest in key-derivation mode).
 - 🪪 **Local & global renaming** (optional, experimental) — rename function
   parameters/locals, and private module-level names (`_helper`), to opaque
   names; skips unsafe functions/modules
@@ -39,8 +49,9 @@ your .py  ──►  AST transforms  ──►  compile to bytecode  ──►  
   tree, preserving layout and copying data files.
 - 🏗️ **PyInstaller integration** — obfuscate *and* build a standalone executable
   in one command. The runtime is bundled automatically.
-- 🛡️ **Runtime protection** — expiry dates, machine binding, anti-debug checks
-  and signed external **license files** you can re-issue without rebuilding.
+- 🛡️ **Licensing helpers** — trial-expiry dates, per-machine activation, an
+  optional debugger check, and signed external **license files** you can
+  re-issue without rebuilding.
 - 🐍 **Pure Python, zero runtime dependencies** — the generated runtime only uses
   the standard library, so protected programs run anywhere.
 
@@ -257,16 +268,17 @@ Config lives in a `[nuitka]` section (see the example file): `entry`,
 > for such apps PyInstaller is usually the pragmatic choice. tungtungarmor makes
 > the build *correct*; it can't make Nuitka fast on a huge dependency tree.
 
-## Runtime protection (PyArmor-style)
+## Licensing & activation
 
-Add license-style guards that run *before* your code does. They work with both
-`obfuscate` and `pyinstaller`, and can also be set in the config `[protection]`
-section.
+Add licensing guards that run *before* your code does — trial expiry, per-seat
+activation, and signed license files. They work with both `obfuscate` and
+`pyinstaller`, and can also be set in the config `[protection]` section. These
+are **licensing conveniences**, not a hardened security boundary.
 
 | Flag | Effect |
 |------|--------|
-| `--expire YYYY-MM-DD` | Refuse to run after this date |
-| `--anti-debug` | Abort if a debugger/tracer is detected (`sys.gettrace`, `pydevd`/`pdb`/`bdb`, Linux `TracerPid`); re-checked on every module load |
+| `--expire YYYY-MM-DD` | Refuse to run after this trial/license date |
+| `--anti-debug` | Optional debugger check: stop if a debugger/tracer is attached (`sys.gettrace`, `pydevd`/`pdb`/`bdb`, Linux `TracerPid`); re-checked on every module load |
 | `--bind-machine` | Bind to the **build** machine's id |
 | `--allow-machine ID` | Allow a specific machine id (repeatable) |
 | `--require-license` | Require a valid signed license file at runtime |
@@ -376,22 +388,23 @@ pack(
 
 ## Limitations & honest disclaimer
 
-- In the **default** mode — like **every** pure-Python obfuscator (PyArmor's
-  pure-python mode included) — the decryption key ultimately ships inside the
-  program, and the loader is pure Python, so a determined, skilled attacker can
-  recover the bytecode. The goal is to **raise the bar substantially**, not to
-  provide unbreakable DRM.
-- **Key-derivation mode** (`--kdf pbkdf2`) removes the shipped key: the artifact
-  can't be decrypted without the runtime secret, and the self-integrity check
-  meaningfully resists loader patching there. This is the strongest mode
-  available today. A **compiled (C-extension) runtime** — which would also hide
-  the *decryptor* itself, PyArmor-style — is a planned follow-up; it needs a
-  build toolchain and per-platform artifacts, so it is intentionally **not**
-  bundled yet.
-- The runtime guards (anti-debug, expiry, machine/license checks) are strong
-  **deterrents**. In default mode a skilled attacker can patch them out; in
-  key-derivation mode they are meaningfully harder to bypass. They stop casual
-  sharing and enforce honest licensing, not a motivated cracker.
+- Be realistic about the guarantee. In the **default** mode — like **every**
+  pure-Python obfuscator (PyArmor's pure-python mode included) — the decryption
+  key ultimately ships inside the program, and the loader is plain Python. So it
+  raises the bar against casual copying; it is **not** unbreakable DRM, and
+  anyone running the program can, with effort, recover the bytecode. That is by
+  design: it protects your IP from casual reuse, it does not hide the program
+  from the person using it.
+- **Key-derivation mode** (`--kdf pbkdf2`) does not ship the key at all: the
+  artifact can't be decrypted without the runtime secret, so this is the
+  strongest option for code you only want to run in an environment you control
+  (e.g. a server). A **compiled (C-extension) runtime** is a possible future
+  option but needs a build toolchain and per-platform artifacts, so it is
+  intentionally **not** bundled yet.
+- The runtime guards (expiry, machine binding, the optional debugger check) are
+  **licensing/anti-tamper conveniences**, not a security boundary — they help
+  you enforce honest trial/seat terms and notice casual modification, and a
+  skilled user can still remove them. Treat them as deterrents, not guarantees.
 - Machine ids are derived from OS + hostname + MAC; they can change (new NIC,
   VM cloning) — keep a way to re-issue licenses.
 - Marshalled bytecode is tied to the Python **minor version** used to obfuscate;
@@ -401,8 +414,10 @@ pack(
   your app after enabling them. Global renaming only touches *private*
   module-level names and bails on dynamic namespace use, but code that reaches a
   private name by string (e.g. `getattr`) across modules can still break.
-- This is a defensive IP-protection / anti-casual-copying tool. Use it only on
-  code you own or are authorized to protect.
+- **Use responsibly.** Only obfuscate code you own or are explicitly authorized
+  to protect. This is for defending your own intellectual property and
+  licensing — not for concealing software from its users, from system owners, or
+  from security tooling.
 
 ## Development
 
