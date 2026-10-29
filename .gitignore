@@ -1,0 +1,14 @@
+# tungtungarmor / build artifacts
+dist/
+build/
+dist_protected/
+*.spec
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.pytest_cache/
+.venv/
+venv/

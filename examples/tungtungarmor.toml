@@ -1,0 +1,58 @@
+# Example tungtungarmor config.
+# Run from this directory:  tungtungarmor pyinstaller
+# (entry/output are read from here, so no long command line is needed)
+
+# --- obfuscation options (top level) ---
+output = "dist_protected"
+encrypt_strings = true
+min_string_length = 2       # only encrypt string literals of at least this length
+rename_locals = true        # experimental: rename local vars/params for +1 layer
+rename_globals = false      # experimental: rename private module-level names (_helper)
+strip_bytecode = true       # remove absolute source paths from the bytecode (default)
+optimize = 2
+runtime_pkg = "tungtungarmor_runtime"
+
+# --- key-derivation mode (optional): don't ship the key, derive it at runtime ---
+# kdf = "pbkdf2"            # build reads the secret from $TTA_SECRET; only salt+iters are stored
+# kdf_secret_env = "TTA_SECRET"
+# kdf_iters = 200000
+
+# --- PyInstaller build options ---
+[pyinstaller]
+entry = "hello.py"
+project_root = "."
+name = "TungTung Poster"
+onedir = true        # false => one-file
+windowed = false     # true  => no console window (GUI apps)
+# icon = "assets/icons/app.ico"
+noupx = true
+
+# These long lists used to live on one giant command line:
+hidden_imports = [
+    "api_server", "adbutils", "fastapi", "uvicorn", "uvicorn.loops.auto",
+    "uvicorn.protocols.http.auto", "anyio.backends._asyncio",
+    "pandas", "numpy", "PIL", "customtkinter", "selenium",
+]
+collect_data = ["pandas", "uiautomator2", "imageio"]
+collect_submodules = ["uvicorn"]
+copy_metadata = ["numpy", "Pillow", "pandas", "fastapi", "uvicorn", "starlette"]
+add_data = [
+    "assets;assets",       # use ':' instead of ';' on Linux/macOS
+    "templates;templates",
+    "locales;locales",
+]
+
+# Any remaining raw flags, PyArmor pyi_options style:
+pyi_options = ""
+# Or already-tokenised extras:
+extra_args = []
+
+# --- runtime protection (PyArmor-style), applies to obfuscate & pyinstaller ---
+[protection]
+expire = "2027-12-31"          # refuse to run after this date (omit for none)
+anti_debug = true              # abort if a debugger/tracer is detected
+require_license = false        # require a signed license file at runtime
+license_name = "tungtungarmor.lic"
+bind_machine = false           # bind to the BUILD machine's id
+machines = []                  # or list specific allowed machine ids here
+
